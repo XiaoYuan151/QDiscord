@@ -55,6 +55,15 @@ export interface DiscordMessageToQqInput {
   embeds?: Iterable<DiscordEmbedLike>;
 }
 
+export interface DiscordReplyPreviewLike {
+  messageId: string;
+  authorName?: string;
+  content?: string;
+  attachmentCount?: number;
+  embedCount?: number;
+  stickerCount?: number;
+}
+
 export interface DiscordReactionToQqInput {
   action: "added" | "removed";
   emojiText: string;
@@ -206,6 +215,11 @@ export function discordMessageToQqSegments(
   appendSegments(segments, bodySegments);
 
   return segments;
+}
+
+export function formatDiscordReplyFallback(input: DiscordReplyPreviewLike): string {
+  const preview = replyPreviewText(input);
+  return `[Discord reply to ${preview || input.messageId}]`;
 }
 
 export function discordReactionToQqSegments(
@@ -558,6 +572,23 @@ function truncateInline(text: string, maxLength = 160): string {
   }
 
   return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`;
+}
+
+function replyPreviewText(input: DiscordReplyPreviewLike): string {
+  const content = normalizeWhitespace(input.content ?? "");
+  const mediaParts = [
+    input.attachmentCount ? `${input.attachmentCount} attachment(s)` : undefined,
+    input.embedCount ? `${input.embedCount} embed(s)` : undefined,
+    input.stickerCount ? `${input.stickerCount} sticker(s)` : undefined
+  ].filter(Boolean);
+  const rawPreview = content || mediaParts.join(", ");
+  const preview = rawPreview ? truncateInline(rawPreview, 120) : "";
+  const author = input.authorName?.trim();
+  if (author && preview) {
+    return `${author}: ${preview}`;
+  }
+
+  return author || preview;
 }
 
 function summarizeRichPayload(type: string, data: Record<string, string>): string {

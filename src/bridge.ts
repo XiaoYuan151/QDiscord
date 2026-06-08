@@ -27,6 +27,7 @@ import {
   discordMessageToQqSegments,
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
+  formatDiscordReplyFallback,
   qqReactionToDiscordContent,
   qqSegmentsToDiscord,
   splitDiscordContent
@@ -425,6 +426,10 @@ export class QDiscordBridge {
     const replyToQqMessageId = referencedDiscordMessageId
       ? this.getLinkByDiscordMessageId(referencedDiscordMessageId)?.qqMessageId
       : undefined;
+    const replyFallbackText =
+      referencedDiscordMessageId && !replyToQqMessageId
+        ? await this.createDiscordReplyFallback(message, referencedDiscordMessageId)
+        : undefined;
     const senderName = getDiscordSenderName(message);
     const senderLabel = this.config.showSenderName
       ? `[Discord${options.edited ? " edited" : ""}] ${senderName}`
@@ -436,10 +441,7 @@ export class QDiscordBridge {
         content: message.content,
         senderLabel,
         replyToQqMessageId,
-        replyFallbackText:
-          referencedDiscordMessageId && !replyToQqMessageId
-            ? `[Discord reply to ${referencedDiscordMessageId}]`
-            : undefined,
+        replyFallbackText,
         attachments: message.attachments.values(),
         stickers: message.stickers.values(),
         embeds: message.embeds
@@ -494,6 +496,30 @@ export class QDiscordBridge {
     }
 
     await this.handleDiscordMessage(message, { edited: true });
+  }
+
+  private async createDiscordReplyFallback(
+    message: Message,
+    referencedDiscordMessageId: string
+  ): Promise<string> {
+    try {
+      const referenced = await message.fetchReference();
+      return formatDiscordReplyFallback({
+        messageId: referencedDiscordMessageId,
+        authorName: getDiscordSenderName(referenced),
+        content: referenced.content,
+        attachmentCount: referenced.attachments.size,
+        embedCount: referenced.embeds.length,
+        stickerCount: referenced.stickers.size
+      });
+    } catch (error) {
+      this.logger.debug("Failed to fetch Discord reply reference", {
+        messageId: message.id,
+        referencedDiscordMessageId,
+        error
+      });
+      return formatDiscordReplyFallback({ messageId: referencedDiscordMessageId });
+    }
   }
 
   private async handleDiscordMessageDelete(message: Message | PartialMessage): Promise<void> {
