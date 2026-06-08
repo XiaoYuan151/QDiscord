@@ -7,6 +7,7 @@ describe("AsyncTaskQueue", () => {
     const queue = new AsyncTaskQueue({
       name: "test",
       concurrency: 1,
+      maxPending: 100,
       minDelayMs: 0,
       maxRetries: 2,
       retryBaseDelayMs: 0
@@ -27,7 +28,8 @@ describe("AsyncTaskQueue", () => {
       pending: 0,
       running: 0,
       completed: 1,
-      failed: 0
+      failed: 0,
+      dropped: 0
     });
   });
 
@@ -36,6 +38,7 @@ describe("AsyncTaskQueue", () => {
     const queue = new AsyncTaskQueue({
       name: "test",
       concurrency: 1,
+      maxPending: 100,
       minDelayMs: 0,
       maxRetries: 0,
       retryBaseDelayMs: 0
@@ -63,6 +66,7 @@ describe("AsyncTaskQueue", () => {
     const queue = new AsyncTaskQueue({
       name: "test",
       concurrency: 1,
+      maxPending: 100,
       minDelayMs: 0,
       maxRetries: 0,
       retryBaseDelayMs: 0
@@ -82,6 +86,7 @@ describe("AsyncTaskQueue", () => {
     const queue = new AsyncTaskQueue({
       name: "test",
       concurrency: 1,
+      maxPending: 100,
       minDelayMs: 0,
       maxRetries: 1,
       retryBaseDelayMs: 1000
@@ -112,5 +117,25 @@ describe("AsyncTaskQueue", () => {
     await expect(first).resolves.toBe("first-ok");
     expect(events).toEqual(["first:1", "second", "first:2"]);
     vi.useRealTimers();
+  });
+
+  it("drops new tasks when pending work exceeds the configured limit", async () => {
+    const queue = new AsyncTaskQueue({
+      name: "test",
+      concurrency: 1,
+      maxPending: 1,
+      minDelayMs: 1000,
+      maxRetries: 0,
+      retryBaseDelayMs: 0
+    });
+
+    void queue.add("first", async () => "ok");
+    await expect(queue.add("second", async () => "nope")).rejects.toThrow(
+      "Queue test is full"
+    );
+    expect(queue.stats()).toMatchObject({
+      pending: 1,
+      dropped: 1
+    });
   });
 });

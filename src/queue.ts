@@ -1,6 +1,7 @@
 export interface AsyncTaskQueueOptions {
   name: string;
   concurrency: number;
+  maxPending: number;
   minDelayMs: number;
   maxRetries: number;
   retryBaseDelayMs: number;
@@ -11,6 +12,7 @@ export interface QueueStats {
   running: number;
   completed: number;
   failed: number;
+  dropped: number;
 }
 
 interface QueueItem<T> {
@@ -28,6 +30,7 @@ export class AsyncTaskQueue {
   private running = 0;
   private completed = 0;
   private failed = 0;
+  private dropped = 0;
   private nextRunAt = 0;
   private drainTimer?: NodeJS.Timeout;
   private drainTimerDueAt = 0;
@@ -39,6 +42,11 @@ export class AsyncTaskQueue {
   }
 
   add<T>(label: string, task: () => Promise<T>): Promise<T> {
+    if (this.pending.length >= this.options.maxPending) {
+      this.dropped += 1;
+      return Promise.reject(new Error(`Queue ${this.options.name} is full; dropped task: ${label}`));
+    }
+
     return new Promise<T>((resolve, reject) => {
       this.pending.push({
         label,
@@ -57,7 +65,8 @@ export class AsyncTaskQueue {
       pending: this.pending.length,
       running: this.running,
       completed: this.completed,
-      failed: this.failed
+      failed: this.failed,
+      dropped: this.dropped
     };
   }
 

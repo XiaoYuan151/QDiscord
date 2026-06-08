@@ -21,8 +21,8 @@ function status(overrides: Partial<BridgeRuntimeStatus> = {}): BridgeRuntimeStat
       reconnectAttempts: 0
     },
     queues: {
-      "discord-to-qq": { pending: 0, running: 0, completed: 0, failed: 0 },
-      "qq-to-discord": { pending: 0, running: 0, completed: 0, failed: 0 }
+      "discord-to-qq": { pending: 0, running: 0, completed: 0, failed: 0, dropped: 0 },
+      "qq-to-discord": { pending: 0, running: 0, completed: 0, failed: 0, dropped: 0 }
     },
     bridgePairs: 1,
     messageLinks: {

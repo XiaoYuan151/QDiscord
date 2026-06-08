@@ -87,6 +87,7 @@ QDiscord queues outbound bridge work to avoid bursts against Discord or NapCat:
 
 ```bash
 QUEUE_CONCURRENCY=1
+QUEUE_MAX_PENDING=1000
 QUEUE_MIN_DELAY_MS=250
 QUEUE_MAX_RETRIES=3
 QUEUE_RETRY_BASE_DELAY_MS=1000

@@ -36,6 +36,7 @@ export interface AppConfig {
   napcatHeartbeatTimeoutMs: number;
   oneBotActionTimeoutMs: number;
   queueConcurrency: number;
+  queueMaxPending: number;
   queueMinDelayMs: number;
   queueMaxRetries: number;
   queueRetryBaseDelayMs: number;
@@ -122,6 +123,7 @@ export interface BridgeRuntimeStatus {
       running: number;
       completed: number;
       failed: number;
+      dropped: number;
     }
   >;
   bridgePairs: number;

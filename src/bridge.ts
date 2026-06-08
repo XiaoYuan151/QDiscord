@@ -115,6 +115,7 @@ export class QDiscordBridge {
     this.discordToQqQueue = new AsyncTaskQueue({
       name: "discord-to-qq",
       concurrency: config.queueConcurrency,
+      maxPending: config.queueMaxPending,
       minDelayMs: config.queueMinDelayMs,
       maxRetries: config.queueMaxRetries,
       retryBaseDelayMs: config.queueRetryBaseDelayMs
@@ -122,6 +123,7 @@ export class QDiscordBridge {
     this.qqToDiscordQueue = new AsyncTaskQueue({
       name: "qq-to-discord",
       concurrency: config.queueConcurrency,
+      maxPending: config.queueMaxPending,
       minDelayMs: config.queueMinDelayMs,
       maxRetries: config.queueMaxRetries,
       retryBaseDelayMs: config.queueRetryBaseDelayMs
@@ -1116,7 +1118,7 @@ function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
   const queueLines = Object.entries(status.queues)
     .map(
       ([name, stats]) =>
-        `${name}: pending ${stats.pending}, running ${stats.running}, failed ${stats.failed}`
+        `${name}: pending ${stats.pending}, running ${stats.running}, failed ${stats.failed}, dropped ${stats.dropped}`
     )
     .join("\n");
 
