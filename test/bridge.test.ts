@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isStatusCommandAuthorized, resolveDiscordBridgeRoute } from "../src/bridge.js";
-import type { BridgePair } from "../src/types.js";
+import {
+  formatOneBotGroupNotice,
+  isStatusCommandAuthorized,
+  resolveDiscordBridgeRoute
+} from "../src/bridge.js";
+import type { BridgePair, OneBotNoticeEvent } from "../src/types.js";
 
 describe("bridge command authorization", () => {
   it("allows status command users by allow-list or Manage Server permission", () => {
@@ -80,5 +84,77 @@ describe("Discord bridge route resolution", () => {
         ])
       })
     ).toEqual({ pair: threadPair, routeChannelId: "300" });
+  });
+});
+
+describe("OneBot group notice formatting", () => {
+  it("formats QQ admin and mute notices", () => {
+    expect(
+      formatOneBotGroupNotice({
+        post_type: "notice",
+        notice_type: "group_admin",
+        sub_type: "set",
+        group_id: 100,
+        user_id: 200,
+        operator_id: 300
+      })
+    ).toBe("[QQ admin] User 200 was made admin in group 100 by operator 300");
+
+    expect(
+      formatOneBotGroupNotice({
+        post_type: "notice",
+        notice_type: "group_ban",
+        sub_type: "ban",
+        group_id: 100,
+        user_id: 200,
+        operator_id: 300,
+        duration: 3660
+      })
+    ).toBe("[QQ mute] User 200 was muted in group 100 by operator 300 for 1h 1m");
+
+    expect(
+      formatOneBotGroupNotice({
+        post_type: "notice",
+        notice_type: "group_ban",
+        sub_type: "lift_ban",
+        group_id: 100,
+        user_id: 200
+      })
+    ).toBe("[QQ mute] User 200 was unmuted in group 100");
+  });
+
+  it("formats QQ notify notices", () => {
+    expect(
+      formatOneBotGroupNotice({
+        post_type: "notice",
+        notice_type: "notify",
+        sub_type: "poke",
+        group_id: 100,
+        user_id: 200,
+        target_id: 300
+      })
+    ).toBe("[QQ poke] User 200 poked user 300 in group 100");
+
+    expect(
+      formatOneBotGroupNotice({
+        post_type: "notice",
+        notice_type: "notify",
+        sub_type: "honor",
+        group_id: 100,
+        user_id: 200,
+        honor_type: "talkative"
+      })
+    ).toBe("[QQ honor] User 200 received talkative in group 100");
+  });
+
+  it("ignores group notices that have dedicated bridge handling", () => {
+    const upload: OneBotNoticeEvent = {
+      post_type: "notice",
+      notice_type: "group_upload",
+      group_id: 100,
+      user_id: 200
+    };
+
+    expect(formatOneBotGroupNotice(upload)).toBeUndefined();
   });
 });

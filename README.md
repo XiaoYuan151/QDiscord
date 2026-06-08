@@ -18,6 +18,7 @@ It supports:
 - Basic reply, edit, delete/recall, and Discord bulk-delete synchronization
 - Discord and QQ reaction add/remove notices, including Discord reaction-clear summaries
 - Discord thread messages through bridge pairs configured on the parent channel
+- QQ group upload, admin, mute, poke, lucky king, and honor notices to Discord
 - Join/leave notices, best-effort QQ typing notices, queue retries, health endpoints, and `/bridge status`
 
 ## Requirements

@@ -856,6 +856,19 @@ export class QDiscordBridge {
       return;
     }
 
+    if (event.group_id !== undefined) {
+      const content = formatOneBotGroupNotice(event);
+      if (content) {
+        const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+        if (!pair || pair.direction === "discord-to-qq") {
+          return;
+        }
+
+        await this.sendDiscordSystemMessage(pair.discordChannelId, content);
+        return;
+      }
+    }
+
     if (
       this.config.bridgeMemberEvents &&
       event.group_id !== undefined &&
@@ -1489,6 +1502,48 @@ function formatOneBotGroupUpload(event: OneBotNoticeEvent): string {
   return `[QQ file upload] User ${uploader} uploaded ${details}`;
 }
 
+export function formatOneBotGroupNotice(event: OneBotNoticeEvent): string | undefined {
+  const groupId = event.group_id ?? "unknown";
+  const userId = firstString(event.user_id, event.target_id) ?? "unknown";
+  const operatorId = firstString(event.operator_id);
+  const operator = operatorId ? ` by operator ${operatorId}` : "";
+  const subType = firstString(event.sub_type, event.action, event.operator_type)?.toLowerCase() ?? "";
+
+  if (event.notice_type === "group_admin") {
+    const action = /unset|remove|cancel|off/.test(subType) ? "removed as admin" : "made admin";
+    return `[QQ admin] User ${userId} was ${action} in group ${groupId}${operator}`;
+  }
+
+  if (event.notice_type === "group_ban") {
+    const lifted = /lift|unset|remove|cancel|off/.test(subType);
+    if (lifted) {
+      return `[QQ mute] User ${userId} was unmuted in group ${groupId}${operator}`;
+    }
+
+    const duration = firstString(event.duration);
+    const detail = duration ? ` for ${formatDurationSeconds(duration)}` : "";
+    return `[QQ mute] User ${userId} was muted in group ${groupId}${operator}${detail}`;
+  }
+
+  if (event.notice_type === "notify") {
+    if (subType === "poke") {
+      const targetId = firstString(event.target_id, event.receiver_id) ?? "unknown";
+      return `[QQ poke] User ${userId} poked user ${targetId} in group ${groupId}`;
+    }
+
+    if (subType === "lucky_king") {
+      return `[QQ notice] User ${userId} was the lucky king in group ${groupId}`;
+    }
+
+    if (subType === "honor") {
+      const honorType = firstString(event.honor_type, event.title) ?? "honor";
+      return `[QQ honor] User ${userId} received ${honorType} in group ${groupId}`;
+    }
+  }
+
+  return undefined;
+}
+
 function formatBytes(value: string): string {
   const bytes = Number(value);
   if (!Number.isFinite(bytes) || bytes < 0) {
@@ -1509,6 +1564,33 @@ function formatBytes(value: string): string {
   }
 
   return `${amount.toFixed(0)} PB`;
+}
+
+function formatDurationSeconds(value: string): string {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return value;
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) {
+    return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
 function firstString(...values: unknown[]): string | undefined {
