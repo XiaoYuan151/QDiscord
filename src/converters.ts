@@ -424,8 +424,20 @@ export function splitDiscordContent(content: string, maxLength = 1900): string[]
     return [content];
   }
 
-  const chunks = splitText(content, Math.max(1, maxLength - 18));
-  return chunks.map((chunk, index) => `${chunk}\n[part ${index + 1}/${chunks.length}]`);
+  let reserveLength = partSuffix(1, 1).length;
+  let chunks = splitText(content, Math.max(1, maxLength - reserveLength));
+
+  while (true) {
+    const nextReserveLength = partSuffix(chunks.length, chunks.length).length;
+    if (nextReserveLength === reserveLength) {
+      break;
+    }
+
+    reserveLength = nextReserveLength;
+    chunks = splitText(content, Math.max(1, maxLength - reserveLength));
+  }
+
+  return chunks.map((chunk, index) => `${chunk}${partSuffix(index + 1, chunks.length)}`);
 }
 
 export function chunkQqSegments(segments: CqSegment[], maxTextLength = 3500): CqSegment[][] {
@@ -587,6 +599,10 @@ function splitText(text: string, maxLength: number): string[] {
   }
 
   return chunks;
+}
+
+function partSuffix(index: number, total: number): string {
+  return `\n[part ${index}/${total}]`;
 }
 
 function truncateInline(text: string, maxLength = 160): string {

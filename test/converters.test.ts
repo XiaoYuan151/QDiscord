@@ -320,6 +320,11 @@ describe("Discord to QQ conversion", () => {
     expect(discordChunks[0]).toContain("[part 1/");
     expect(discordChunks.every((chunk) => chunk.length <= 32)).toBe(true);
 
+    const manyDiscordChunks = splitDiscordContent("x".repeat(280), 24);
+    expect(manyDiscordChunks.length).toBeGreaterThan(9);
+    expect(manyDiscordChunks.every((chunk) => chunk.length <= 24)).toBe(true);
+    expect(manyDiscordChunks.at(-1)).toContain(`[part ${manyDiscordChunks.length}/${manyDiscordChunks.length}]`);
+
     expect(
       chunkQqSegments([{ type: "text", data: { text: "abcdef" } }], 3)
     ).toEqual([
