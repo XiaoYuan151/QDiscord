@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatOneBotGroupNotice,
+  isOneBotNoticeBlocked,
   isStatusCommandAuthorized,
   resolveDiscordBridgeRoute
 } from "../src/bridge.js";
@@ -156,5 +157,44 @@ describe("OneBot group notice formatting", () => {
     };
 
     expect(formatOneBotGroupNotice(upload)).toBeUndefined();
+  });
+});
+
+describe("OneBot notice filtering", () => {
+  it("blocks notices from configured QQ user ids", () => {
+    expect(
+      isOneBotNoticeBlocked(
+        {
+          post_type: "notice",
+          notice_type: "group_upload",
+          group_id: 100,
+          user_id: 200
+        },
+        new Set(["200"])
+      )
+    ).toBe(true);
+
+    expect(
+      isOneBotNoticeBlocked(
+        {
+          post_type: "notice",
+          notice_type: "group_upload",
+          group_id: 100,
+          user_id: 201
+        },
+        new Set(["200"])
+      )
+    ).toBe(false);
+
+    expect(
+      isOneBotNoticeBlocked(
+        {
+          post_type: "notice",
+          notice_type: "group_upload",
+          group_id: 100
+        },
+        new Set(["200"])
+      )
+    ).toBe(false);
   });
 });

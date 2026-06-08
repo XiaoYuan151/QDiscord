@@ -162,6 +162,8 @@ BLOCKED_DISCORD_USER_IDS=
 BLOCKED_QQ_USER_IDS=
 ```
 
+These filters apply to bridged messages and supported system notices.
+
 `ALLOW_EVERYONE_MENTIONS=false` is the safe default. QQ `@all` is rendered visibly in Discord, but Discord mentions are restricted with `allowedMentions` unless you explicitly enable broad pings.
 
 ## Run

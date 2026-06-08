@@ -620,12 +620,19 @@ export class QDiscordBridge {
     member: GuildMember | PartialGuildMember,
     action: "joined" | "left"
   ): Promise<void> {
-    if (!this.config.bridgeMemberEvents || member.user.bot) {
+    if (
+      !this.config.bridgeMemberEvents ||
+      member.user.bot ||
+      this.config.blockedDiscordUserIds.has(member.user.id)
+    ) {
       return;
     }
 
     for (const pair of this.config.bridgePairs) {
-      if (pair.direction === "qq-to-discord") {
+      if (
+        pair.direction === "qq-to-discord" ||
+        !this.discordRouteAllowed(pair.discordChannelId, pair.discordChannelId)
+      ) {
         continue;
       }
 
@@ -808,6 +815,10 @@ export class QDiscordBridge {
       await this.deleteDiscordMessage(link.discordChannelId, link.discordMessageId);
       this.forgetByQqMessageId(link.qqMessageId);
       this.persistMessageLinks();
+      return;
+    }
+
+    if (isOneBotNoticeBlocked(event, this.config.blockedQqUserIds)) {
       return;
     }
 
@@ -1328,6 +1339,13 @@ export function isStatusCommandAuthorized(input: {
   hasManageGuild: boolean;
 }): boolean {
   return input.allowedUserIds.has(input.userId) || input.hasManageGuild;
+}
+
+export function isOneBotNoticeBlocked(
+  event: OneBotNoticeEvent,
+  blockedQqUserIds: Set<string>
+): boolean {
+  return event.user_id !== undefined && blockedQqUserIds.has(String(event.user_id));
 }
 
 export function resolveDiscordBridgeRoute(input: {
