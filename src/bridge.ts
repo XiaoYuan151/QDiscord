@@ -28,6 +28,7 @@ import {
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
   formatDiscordReplyFallback,
+  formatQqReplyFallback,
   qqReactionToDiscordContent,
   qqSegmentsToDiscord,
   splitDiscordContent
@@ -641,7 +642,7 @@ export class QDiscordBridge {
       : undefined;
     const replyFallback =
       converted.replyToMessageId && !replyToDiscordMessageId
-        ? `[reply to QQ message ${converted.replyToMessageId}]\n`
+        ? `${await this.createQqReplyFallback(converted.replyToMessageId)}\n`
         : "";
     const sentMessages = await this.sendDiscordMessage(
       channel,
@@ -744,6 +745,34 @@ export class QDiscordBridge {
       const action = event.notice_type === "group_increase" ? "joined" : "left";
       const content = `[QQ] User ${event.user_id ?? "unknown"} ${action} group ${event.group_id}`;
       await this.sendDiscordSystemMessage(discordChannelId, content);
+    }
+  }
+
+  private async createQqReplyFallback(qqMessageId: string): Promise<string> {
+    try {
+      await this.waitForOneBotConnection();
+      const message = await this.oneBot.getMessage(qqMessageId);
+      const segments = normalizeOneBotMessage(message.message ?? message.raw_message);
+      const converted = qqSegmentsToDiscord(segments, {
+        qqToDiscordUserMap: this.config.qqToDiscordUserMap,
+        cqFaceEmojiMap: this.config.cqFaceEmojiMap
+      });
+      const senderName =
+        message.sender?.card?.trim() ||
+        message.sender?.nickname?.trim() ||
+        (message.user_id !== undefined ? `QQ ${message.user_id}` : undefined);
+      return formatQqReplyFallback({
+        messageId: qqMessageId,
+        senderName,
+        content: converted.content,
+        fileCount: converted.files.length
+      });
+    } catch (error) {
+      this.logger.debug("Failed to fetch QQ reply reference", {
+        qqMessageId,
+        error
+      });
+      return formatQqReplyFallback({ messageId: qqMessageId });
     }
   }
 

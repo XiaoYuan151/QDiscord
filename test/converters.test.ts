@@ -8,6 +8,7 @@ import {
   discordReactionToQqSegments,
   discordTextToQqSegments,
   formatDiscordReplyFallback,
+  formatQqReplyFallback,
   qqReactionToDiscordContent,
   qqSegmentsToDiscord,
   splitDiscordContent
@@ -295,6 +296,22 @@ describe("Discord to QQ conversion", () => {
     ).toBe("[Discord reply to Alice: 2 attachment(s), 1 embed(s)]");
 
     expect(formatDiscordReplyFallback({ messageId: "123" })).toBe("[Discord reply to 123]");
+  });
+
+  it("formats QQ reply fallback previews", () => {
+    expect(
+      formatQqReplyFallback({
+        messageId: "456",
+        senderName: "Alice",
+        content: "hello\nworld"
+      })
+    ).toBe("[reply to QQ Alice: hello\nworld]");
+
+    expect(formatQqReplyFallback({ messageId: "456", fileCount: 2 })).toBe(
+      "[reply to QQ message 456: 2 file(s)]"
+    );
+
+    expect(formatQqReplyFallback({ messageId: "456" })).toBe("[reply to QQ message 456]");
   });
 
   it("splits long Discord content and QQ text segments", () => {

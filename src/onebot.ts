@@ -5,6 +5,7 @@ import WebSocket from "ws";
 
 import type {
   CqSegment,
+  OneBotGetMessageData,
   OneBotMessageEvent,
   OneBotNoticeEvent,
   OneBotSendMessageData
@@ -131,6 +132,12 @@ export class OneBotClient extends EventEmitter {
       group_id: normalizeOneBotId(groupId),
       file,
       ...(name ? { name } : {})
+    });
+  }
+
+  async getMessage(messageId: string): Promise<OneBotGetMessageData> {
+    return this.sendAction("get_msg", {
+      message_id: normalizeOneBotId(messageId)
     });
   }
 

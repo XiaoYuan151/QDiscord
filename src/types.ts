@@ -101,6 +101,19 @@ export interface OneBotSendMessageData {
   message_id?: number | string;
 }
 
+export interface OneBotGetMessageData {
+  message_id?: number | string;
+  user_id?: number | string;
+  message?: OneBotMessagePayload;
+  raw_message?: string;
+  sender?: {
+    user_id?: number | string;
+    nickname?: string;
+    card?: string;
+  };
+  [key: string]: unknown;
+}
+
 export interface BridgeRuntimeStatus {
   startedAt: string;
   uptimeSeconds: number;

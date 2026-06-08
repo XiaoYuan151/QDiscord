@@ -76,6 +76,7 @@ describe("OneBotClient", () => {
     await once(client, "loginInfo");
     await client.deleteMessage("9007199254740995");
     await client.uploadGroupFile("123", "https://example.com/file.zip", "file.zip");
+    await client.getMessage("456");
 
     expect(testServer.received).toMatchObject([
       { action: "get_login_info" },
@@ -87,6 +88,10 @@ describe("OneBotClient", () => {
           file: "https://example.com/file.zip",
           name: "file.zip"
         }
+      },
+      {
+        action: "get_msg",
+        params: { message_id: 456 }
       }
     ]);
   });

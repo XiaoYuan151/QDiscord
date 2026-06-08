@@ -77,6 +77,13 @@ export interface QqReactionToDiscordInput {
   userId?: string;
 }
 
+export interface QqReplyPreviewLike {
+  messageId: string;
+  senderName?: string;
+  content?: string;
+  fileCount?: number;
+}
+
 export function qqSegmentsToDiscord(
   segments: CqSegment[],
   options: QqToDiscordOptions
@@ -220,6 +227,22 @@ export function discordMessageToQqSegments(
 export function formatDiscordReplyFallback(input: DiscordReplyPreviewLike): string {
   const preview = replyPreviewText(input);
   return `[Discord reply to ${preview || input.messageId}]`;
+}
+
+export function formatQqReplyFallback(input: QqReplyPreviewLike): string {
+  const content = normalizeWhitespace(input.content ?? "");
+  const preview = truncateInline(
+    content || (input.fileCount ? `${input.fileCount} file(s)` : ""),
+    120
+  );
+  if (input.senderName && preview && preview !== "payload omitted") {
+    return `[reply to QQ ${input.senderName}: ${preview}]`;
+  }
+  if (preview && preview !== "payload omitted") {
+    return `[reply to QQ message ${input.messageId}: ${preview}]`;
+  }
+
+  return `[reply to QQ message ${input.messageId}]`;
 }
 
 export function discordReactionToQqSegments(
