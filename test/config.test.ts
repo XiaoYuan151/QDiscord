@@ -124,4 +124,20 @@ describe("config", () => {
       })
     ).toThrow("Invalid bridge direction");
   });
+
+  it("rejects placeholder secrets", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        DISCORD_TOKEN: "replace-with-your-discord-bot-token"
+      })
+    ).toThrow("DISCORD_TOKEN must be set to a real secret");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        NAPCAT_ACCESS_TOKEN: "changeme"
+      })
+    ).toThrow("NAPCAT_ACCESS_TOKEN must be set to a real secret");
+  });
 });

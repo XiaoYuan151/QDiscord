@@ -81,9 +81,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
-    discordToken: parsed.data.DISCORD_TOKEN,
+    discordToken: parseSecret(parsed.data.DISCORD_TOKEN, "DISCORD_TOKEN"),
     napcatWsUrl: parsed.data.NAPCAT_WS_URL,
-    napcatAccessToken: emptyToUndefined(parsed.data.NAPCAT_ACCESS_TOKEN),
+    napcatAccessToken: parseOptionalSecret(parsed.data.NAPCAT_ACCESS_TOKEN, "NAPCAT_ACCESS_TOKEN"),
     bridgePairs,
     discordChannelToQqGroup,
     qqGroupToDiscordChannel,
@@ -308,6 +308,20 @@ function parseCommandName(input: string | undefined, defaultValue: string): stri
   }
 
   return commandName;
+}
+
+function parseOptionalSecret(input: string | undefined, label: string): string | undefined {
+  const secret = emptyToUndefined(input);
+  return secret ? parseSecret(secret, label) : undefined;
+}
+
+function parseSecret(input: string, label: string): string {
+  const secret = input.trim();
+  if (!secret || /^(replace|replace-with|your-|changeme|change-me|example)/i.test(secret)) {
+    throw new Error(`${label} must be set to a real secret, not a placeholder`);
+  }
+
+  return secret;
 }
 
 function parseSet(input: string | undefined): Set<string> {
