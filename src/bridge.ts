@@ -778,6 +778,7 @@ export class QDiscordBridge {
       const fileSegments = chunk.filter((segment) => segment.type === "file");
 
       if (messageSegments.length > 0) {
+        await this.waitForOneBotConnection();
         results.push(await this.oneBot.sendGroupMessage(qqGroupId, messageSegments));
       }
 
@@ -799,6 +800,7 @@ export class QDiscordBridge {
     const file = firstString(segment.data.file, segment.data.url, segment.data.path);
     const name = sanitizeFileName(firstString(segment.data.name, segment.data.file_name) ?? inferFileName(file));
     if (!file) {
+      await this.waitForOneBotConnection();
       return this.oneBot.sendGroupMessage(qqGroupId, [
         { type: "text", data: { text: "[Discord file]" } }
       ]);
@@ -806,6 +808,7 @@ export class QDiscordBridge {
 
     if (this.config.uploadQqFiles) {
       try {
+        await this.waitForOneBotConnection();
         await this.oneBot.uploadGroupFile(qqGroupId, file, name);
         return undefined;
       } catch (error) {
@@ -817,6 +820,7 @@ export class QDiscordBridge {
       }
     }
 
+    await this.waitForOneBotConnection();
     return this.oneBot.sendGroupMessage(qqGroupId, [
       { type: "text", data: { text: `[Discord file${name ? ` ${name}` : ""}: ${file}]` } }
     ]);
@@ -935,6 +939,7 @@ export class QDiscordBridge {
 
   private async deleteQqMessage(qqMessageId: string): Promise<void> {
     try {
+      await this.waitForOneBotConnection();
       await this.oneBot.deleteMessage(qqMessageId);
     } catch (error) {
       this.logger.warn("Failed to delete QQ message", { qqMessageId, error });
@@ -951,6 +956,14 @@ export class QDiscordBridge {
     } catch (error) {
       this.logger.warn("Failed to delete Discord message", { channelId, messageId, error });
     }
+  }
+
+  private async waitForOneBotConnection(): Promise<void> {
+    if (await this.oneBot.waitUntilConnected(this.config.oneBotActionTimeoutMs)) {
+      return;
+    }
+
+    throw new Error("NapCat OneBot WebSocket did not reconnect before action timeout");
   }
 
   private rememberMessageLink(link: MessageLink): void {

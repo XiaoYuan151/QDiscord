@@ -183,6 +183,26 @@ describe("OneBotClient", () => {
 
     expect(client.connected).toBe(true);
   });
+
+  it("waits until the WebSocket is connected", async () => {
+    const testServer = await createOneBotServer((socket, packet) => {
+      if (packet.action === "get_login_info") {
+        sendActionResponse(socket, packet.echo, { user_id: 1 });
+      }
+    });
+    const client = createClient(testServer.url);
+    const connected = client.waitUntilConnected(1000);
+
+    client.connect();
+
+    await expect(connected).resolves.toBe(true);
+  });
+
+  it("reports false when waiting for connection times out", async () => {
+    const client = createClient("ws://127.0.0.1:1");
+
+    await expect(client.waitUntilConnected(1)).resolves.toBe(false);
+  });
 });
 
 async function createOneBotServer(

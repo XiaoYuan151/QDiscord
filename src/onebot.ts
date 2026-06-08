@@ -46,6 +46,7 @@ export class OneBotClient extends EventEmitter {
   private reconnectTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
   private heartbeatTimeoutTimer?: NodeJS.Timeout;
+  private readonly connectionWaiters = new Set<(connected: boolean) => void>();
   private shouldReconnect = true;
   private selfQQIdValue?: string;
   private reconnectAttemptsValue = 0;
@@ -75,6 +76,28 @@ export class OneBotClient extends EventEmitter {
     this.openSocket();
   }
 
+  async waitUntilConnected(timeoutMs: number): Promise<boolean> {
+    if (this.connected) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (connected: boolean) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        this.connectionWaiters.delete(finish);
+        resolve(connected);
+      };
+      const timer = setTimeout(() => finish(this.connected), timeoutMs);
+      this.connectionWaiters.add(finish);
+    });
+  }
+
   disconnect(): void {
     this.shouldReconnect = false;
     if (this.reconnectTimer) {
@@ -86,6 +109,7 @@ export class OneBotClient extends EventEmitter {
     this.ws?.close();
     this.ws = undefined;
     this.rejectAllPending(new Error("OneBot client disconnected"));
+    this.notifyConnectionWaiters(false);
   }
 
   async sendGroupMessage(groupId: string, message: CqSegment[]): Promise<OneBotSendMessageData> {
@@ -158,6 +182,7 @@ export class OneBotClient extends EventEmitter {
     ws.on("open", () => {
       this.reconnectAttemptsValue = 0;
       this.emit("open");
+      this.notifyConnectionWaiters(true);
       this.scheduleHeartbeat();
       void this.refreshLoginInfo();
     });
@@ -319,6 +344,12 @@ export class OneBotClient extends EventEmitter {
       pending.reject(error);
     }
     this.pending.clear();
+  }
+
+  private notifyConnectionWaiters(connected: boolean): void {
+    for (const waiter of this.connectionWaiters) {
+      waiter(connected);
+    }
   }
 }
 
