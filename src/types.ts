@@ -28,6 +28,7 @@ export interface AppConfig {
   statusCommandEnabled: boolean;
   statusCommandName: string;
   statusCommandGuildIds: Set<string>;
+  statusCommandAllowedUserIds: Set<string>;
   discordMaxContentLength: number;
   qqMaxTextSegmentLength: number;
   napcatReconnectInitialMs: number;

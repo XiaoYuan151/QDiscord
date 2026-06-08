@@ -329,6 +329,9 @@ export class QDiscordBridge {
     const commandData = {
       name: this.config.statusCommandName,
       description: "QDiscord bridge controls",
+      dmPermission: false,
+      defaultMemberPermissions:
+        this.config.statusCommandAllowedUserIds.size === 0 ? PermissionFlagsBits.ManageGuild : null,
       options: [
         {
           type: ApplicationCommandOptionType.Subcommand,
@@ -413,9 +416,25 @@ export class QDiscordBridge {
       return;
     }
 
+    if (!this.canUseStatusCommand(interaction)) {
+      await interaction.reply({
+        content: "You do not have permission to use this bridge command.",
+        ephemeral: true
+      });
+      return;
+    }
+
     await interaction.reply({
       content: formatStatusForDiscord(this.getStatus()),
       ephemeral: true
+    });
+  }
+
+  private canUseStatusCommand(interaction: ChatInputCommandInteraction): boolean {
+    return isStatusCommandAuthorized({
+      userId: interaction.user.id,
+      allowedUserIds: this.config.statusCommandAllowedUserIds,
+      hasManageGuild: interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false
     });
   }
 
@@ -1150,6 +1169,14 @@ export class QDiscordBridge {
 
 function getDiscordSenderName(message: Message): string {
   return message.member?.displayName ?? message.author.globalName ?? message.author.username;
+}
+
+export function isStatusCommandAuthorized(input: {
+  userId: string;
+  allowedUserIds: Set<string>;
+  hasManageGuild: boolean;
+}): boolean {
+  return input.allowedUserIds.has(input.userId) || input.hasManageGuild;
 }
 
 function getQqSenderName(event: OneBotMessageEvent): string {

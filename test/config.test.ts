@@ -19,6 +19,7 @@ describe("config", () => {
     expect(config.uploadQqFiles).toBe(true);
     expect(config.statusCommandName).toBe("bridge");
     expect(config.statusCommandGuildIds.size).toBe(0);
+    expect(config.statusCommandAllowedUserIds.size).toBe(0);
     expect(config.healthPort).toBe(8787);
     expect(config.napcatReconnectInitialMs).toBe(1000);
     expect(config.napcatReconnectMaxMs).toBe(30000);
@@ -42,6 +43,7 @@ describe("config", () => {
       DISCORD_EMOJI_CQ_FACE_MAP: "🙂:14",
       STATUS_COMMAND_NAME: "qbridge",
       STATUS_COMMAND_GUILD_IDS: "777,888",
+      STATUS_COMMAND_ALLOWED_USER_IDS: "999,1000",
       ALLOWED_DISCORD_CHANNEL_IDS: "111,333",
       BLOCKED_DISCORD_USER_IDS: "444",
       BLOCKED_QQ_USER_IDS: "555",
@@ -65,6 +67,7 @@ describe("config", () => {
     expect(config.discordEmojiToCqFaceMap.get("🙂")).toBe("14");
     expect(config.statusCommandName).toBe("qbridge");
     expect([...config.statusCommandGuildIds]).toEqual(["777", "888"]);
+    expect([...config.statusCommandAllowedUserIds]).toEqual(["999", "1000"]);
     expect(config.allowedDiscordChannelIds.has("333")).toBe(true);
     expect(config.blockedDiscordUserIds.has("444")).toBe(true);
     expect(config.blockedQqUserIds.has("555")).toBe(true);
@@ -181,6 +184,13 @@ describe("config", () => {
         STATUS_COMMAND_GUILD_IDS: "guild"
       })
     ).toThrow("STATUS_COMMAND_GUILD_IDS must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        STATUS_COMMAND_ALLOWED_USER_IDS: "user"
+      })
+    ).toThrow("STATUS_COMMAND_ALLOWED_USER_IDS must be numeric");
 
     expect(() =>
       loadConfig({

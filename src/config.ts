@@ -23,6 +23,7 @@ const envSchema = z
     STATUS_COMMAND_ENABLED: z.string().optional(),
     STATUS_COMMAND_NAME: z.string().optional(),
     STATUS_COMMAND_GUILD_IDS: z.string().optional(),
+    STATUS_COMMAND_ALLOWED_USER_IDS: z.string().optional(),
     DISCORD_MAX_CONTENT_LENGTH: z.string().optional(),
     QQ_MAX_TEXT_SEGMENT_LENGTH: z.string().optional(),
     NAPCAT_RECONNECT_MS: z.string().optional(),
@@ -111,6 +112,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     statusCommandEnabled: parseBoolean(parsed.data.STATUS_COMMAND_ENABLED, true),
     statusCommandName: parseCommandName(parsed.data.STATUS_COMMAND_NAME, "bridge"),
     statusCommandGuildIds: parseIdSet(parsed.data.STATUS_COMMAND_GUILD_IDS, "STATUS_COMMAND_GUILD_IDS"),
+    statusCommandAllowedUserIds: parseIdSet(
+      parsed.data.STATUS_COMMAND_ALLOWED_USER_IDS,
+      "STATUS_COMMAND_ALLOWED_USER_IDS"
+    ),
     discordMaxContentLength: parseBoundedInteger(parsed.data.DISCORD_MAX_CONTENT_LENGTH, 1900, {
       min: 500,
       max: 2000

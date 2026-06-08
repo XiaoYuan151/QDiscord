@@ -134,6 +134,12 @@ The Discord bot registers `/bridge status` by default. Change `STATUS_COMMAND_NA
 STATUS_COMMAND_GUILD_IDS=123456789012345678
 ```
 
+By default, `/bridge status` is limited to members with Manage Server. To allow specific Discord users without that permission, set:
+
+```bash
+STATUS_COMMAND_ALLOWED_USER_IDS=111111111111111111,222222222222222222
+```
+
 Generic Discord file attachments use NapCat's `upload_group_file` action by default:
 
 ```bash
