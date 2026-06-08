@@ -148,7 +148,7 @@ export function qqSegmentsToDiscord(
       }
       case "json":
       case "xml": {
-        parts.push(`[QQ ${segment.type}: ${truncateInline(firstValue(segment.data.data, segment.data.content) ?? "")}]`);
+        parts.push(`[QQ ${segment.type}: ${summarizeRichPayload(segment.type, segment.data)}]`);
         break;
       }
       case "forward":
@@ -551,6 +551,74 @@ function truncateInline(text: string, maxLength = 160): string {
   }
 
   return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`;
+}
+
+function summarizeRichPayload(type: string, data: Record<string, string>): string {
+  const payload = firstValue(data.data, data.content, data.text);
+  if (!payload) {
+    return "payload omitted";
+  }
+
+  if (type === "json") {
+    return summarizeJsonPayload(payload);
+  }
+
+  return summarizeXmlPayload(payload);
+}
+
+function summarizeJsonPayload(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload) as unknown;
+    const values = collectJsonSummaryValues(parsed);
+    if (values.length > 0) {
+      return truncateInline(values.join(" | "));
+    }
+  } catch {
+    // Fall through to raw payload summary.
+  }
+
+  return truncateInline(payload);
+}
+
+function collectJsonSummaryValues(value: unknown): string[] {
+  const values: string[] = [];
+  const visit = (current: unknown): void => {
+    if (!current || typeof current !== "object" || values.length >= 6) {
+      return;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const key of ["prompt", "title", "desc", "description", "summary"]) {
+      const entry = record[key];
+      if (typeof entry === "string" && entry.trim()) {
+        values.push(entry.trim());
+      }
+    }
+
+    for (const entry of Object.values(record)) {
+      if (values.length >= 6) {
+        return;
+      }
+      if (Array.isArray(entry)) {
+        for (const item of entry) {
+          visit(item);
+        }
+      } else {
+        visit(entry);
+      }
+    }
+  };
+
+  visit(value);
+  return [...new Set(values)];
+}
+
+function summarizeXmlPayload(payload: string): string {
+  const text = payload
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return truncateInline(text || payload);
 }
 
 function sanitizeFileName(name: string): string {

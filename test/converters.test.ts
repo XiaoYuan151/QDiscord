@@ -77,6 +77,34 @@ describe("QQ to Discord conversion", () => {
     expect(result.files).toEqual(["https://example.com/a.ogg", "https://example.com/a.mp4"]);
     expect(result.content).toBe("[QQ file: local-file.zip]");
   });
+
+  it("summarizes QQ json and xml rich payloads", () => {
+    const result = qqSegmentsToDiscord(
+      [
+        {
+          type: "json",
+          data: {
+            data: JSON.stringify({
+              prompt: "[Share] Example",
+              meta: { news: { title: "Title", desc: "Description" } }
+            })
+          }
+        },
+        {
+          type: "xml",
+          data: { data: "<msg><title>XML Title</title><summary>XML Summary</summary></msg>" }
+        }
+      ],
+      {
+        qqToDiscordUserMap: new Map(),
+        cqFaceEmojiMap: new Map()
+      }
+    );
+
+    expect(result.content).toBe(
+      "[QQ json: [Share] Example | Title | Description][QQ xml: XML Title XML Summary]"
+    );
+  });
 });
 
 describe("Discord to QQ conversion", () => {
