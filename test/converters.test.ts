@@ -318,6 +318,38 @@ describe("Discord to QQ conversion", () => {
     ]);
   });
 
+  it("summarizes Discord forwarded message snapshots", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "",
+          senderLabel: "[Discord] Alice",
+          forwardedMessages: [
+            {
+              content: "forwarded text",
+              attachments: [{ url: "https://example.com/a.png", contentType: "image/png" }],
+              embeds: [{ title: "Forwarded embed", url: "https://example.com/post" }]
+            }
+          ]
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      {
+        type: "text",
+        data: { text: "[Discord] Alice: [Discord forwarded message]\nforwarded text" }
+      },
+      { type: "image", data: { file: "https://example.com/a.png" } },
+      {
+        type: "text",
+        data: { text: "\n[Embed]\nForwarded embed (https://example.com/post)" }
+      }
+    ]);
+  });
+
   it("preserves Discord reply context when no QQ reply id is available", () => {
     expect(
       discordMessageToQqSegments(

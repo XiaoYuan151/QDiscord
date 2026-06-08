@@ -13,6 +13,7 @@ import {
   type Message,
   type MessageCreateOptions,
   type MessageReaction,
+  type MessageSnapshot,
   type PartialGuildMember,
   type PartialMessageReaction,
   type PartialMessage,
@@ -28,6 +29,7 @@ import {
   discordReactionClearToQqSegments,
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
+  type DiscordForwardedMessageLike,
   type DiscordPollLike,
   formatDiscordReplyFallback,
   formatQqReplyFallback,
@@ -502,7 +504,8 @@ export class QDiscordBridge {
         attachments: message.attachments.values(),
         stickers: message.stickers.values(),
         embeds: message.embeds,
-        poll: discordPollToQqInput(message.poll)
+        poll: discordPollToQqInput(message.poll),
+        forwardedMessages: discordForwardedMessagesToQqInput(message.messageSnapshots.values())
       },
       {
         discordToQqUserMap: this.config.discordToQqUserMap,
@@ -1456,6 +1459,17 @@ function discordPollToQqInput(poll: Message["poll"]): DiscordPollLike | undefine
     expiresTimestamp: poll.expiresTimestamp,
     resultsFinalized: poll.resultsFinalized
   };
+}
+
+function discordForwardedMessagesToQqInput(
+  snapshots: Iterable<MessageSnapshot>
+): DiscordForwardedMessageLike[] {
+  return [...snapshots].map((snapshot) => ({
+    content: snapshot.content,
+    attachments: snapshot.attachments.values(),
+    stickers: snapshot.stickers.values(),
+    embeds: snapshot.embeds
+  }));
 }
 
 function formatDiscordPollEmoji(

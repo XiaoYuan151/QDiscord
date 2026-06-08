@@ -60,6 +60,13 @@ export interface DiscordPollLike {
   resultsFinalized?: boolean | null;
 }
 
+export interface DiscordForwardedMessageLike {
+  content?: string | null;
+  attachments?: Iterable<DiscordAttachmentLike>;
+  stickers?: Iterable<DiscordStickerLike>;
+  embeds?: Iterable<DiscordEmbedLike>;
+}
+
 export interface DiscordMessageToQqInput {
   content: string;
   senderLabel?: string;
@@ -69,6 +76,7 @@ export interface DiscordMessageToQqInput {
   stickers?: Iterable<DiscordStickerLike>;
   embeds?: Iterable<DiscordEmbedLike>;
   poll?: DiscordPollLike | null;
+  forwardedMessages?: Iterable<DiscordForwardedMessageLike>;
 }
 
 export interface DiscordReplyPreviewLike {
@@ -223,6 +231,7 @@ export function discordMessageToQqSegments(
   const bodySegments: CqSegment[] = [];
   appendSegments(bodySegments, discordTextToQqSegments(input.content, options));
   appendDiscordPollToQqSegments(bodySegments, input.poll);
+  appendDiscordForwardedMessagesToQqSegments(bodySegments, input.forwardedMessages ?? []);
   appendDiscordAttachmentsToQqSegments(bodySegments, input.attachments ?? []);
   appendDiscordStickersToQqSegments(bodySegments, input.stickers ?? []);
   appendDiscordEmbedsToQqSegments(bodySegments, input.embeds ?? []);
@@ -476,6 +485,24 @@ export function appendDiscordPollToQqSegments(
   }
 
   appendTextSegment(segments, `${segments.length > 0 ? "\n" : ""}${text}`);
+}
+
+export function appendDiscordForwardedMessagesToQqSegments(
+  segments: CqSegment[],
+  forwardedMessages: Iterable<DiscordForwardedMessageLike>
+): void {
+  for (const forwarded of forwardedMessages) {
+    const content = normalizeWhitespace(forwarded.content ?? "");
+    appendTextSegment(
+      segments,
+      `${segments.length > 0 ? "\n" : ""}[Discord forwarded message]${
+        content ? `\n${truncateInline(content, 300)}` : ""
+      }`
+    );
+    appendDiscordAttachmentsToQqSegments(segments, forwarded.attachments ?? []);
+    appendDiscordStickersToQqSegments(segments, forwarded.stickers ?? []);
+    appendDiscordEmbedsToQqSegments(segments, forwarded.embeds ?? []);
+  }
 }
 
 export function escapeDiscordMarkdown(text: string): string {
