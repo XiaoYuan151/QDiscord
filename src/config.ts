@@ -82,15 +82,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   return {
     discordToken: parseSecret(parsed.data.DISCORD_TOKEN, "DISCORD_TOKEN"),
-    napcatWsUrl: parsed.data.NAPCAT_WS_URL,
+    napcatWsUrl: parseWebSocketUrl(parsed.data.NAPCAT_WS_URL, "NAPCAT_WS_URL"),
     napcatAccessToken: parseOptionalSecret(parsed.data.NAPCAT_ACCESS_TOKEN, "NAPCAT_ACCESS_TOKEN"),
     bridgePairs,
     discordChannelToQqGroup,
     qqGroupToDiscordChannel,
     discordChannelToBridgePair,
     qqGroupToBridgePair,
-    qqToDiscordUserMap: parseKeyValueMap(parsed.data.QQ_TO_DISCORD_USER_MAP),
-    discordToQqUserMap: parseKeyValueMap(parsed.data.DISCORD_TO_QQ_USER_MAP),
+    qqToDiscordUserMap: parseIdMap(parsed.data.QQ_TO_DISCORD_USER_MAP, {
+      keyLabel: "QQ_TO_DISCORD_USER_MAP QQ id",
+      valueLabel: "QQ_TO_DISCORD_USER_MAP Discord user id"
+    }),
+    discordToQqUserMap: parseIdMap(parsed.data.DISCORD_TO_QQ_USER_MAP, {
+      keyLabel: "DISCORD_TO_QQ_USER_MAP Discord user id",
+      valueLabel: "DISCORD_TO_QQ_USER_MAP QQ id"
+    }),
     cqFaceEmojiMap: parseKeyValueMap(parsed.data.CQ_FACE_EMOJI_MAP),
     discordEmojiToCqFaceMap: parseKeyValueMap(parsed.data.DISCORD_EMOJI_CQ_FACE_MAP),
     showSenderName: parseBoolean(parsed.data.SHOW_SENDER_NAME, true),
@@ -101,7 +107,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     uploadQqFiles: parseBoolean(parsed.data.UPLOAD_QQ_FILES, true),
     statusCommandEnabled: parseBoolean(parsed.data.STATUS_COMMAND_ENABLED, true),
     statusCommandName: parseCommandName(parsed.data.STATUS_COMMAND_NAME, "bridge"),
-    statusCommandGuildIds: parseSet(parsed.data.STATUS_COMMAND_GUILD_IDS),
+    statusCommandGuildIds: parseIdSet(parsed.data.STATUS_COMMAND_GUILD_IDS, "STATUS_COMMAND_GUILD_IDS"),
     discordMaxContentLength: parseBoundedInteger(parsed.data.DISCORD_MAX_CONTENT_LENGTH, 1900, {
       min: 500,
       max: 2000
@@ -133,9 +139,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     healthHost: emptyToUndefined(parsed.data.HEALTH_HOST) ?? "127.0.0.1",
     healthPort: parsePort(parsed.data.HEALTH_PORT, 8787),
     logLevel: parseLogLevel(parsed.data.LOG_LEVEL, "info"),
-    allowedDiscordChannelIds: parseSet(parsed.data.ALLOWED_DISCORD_CHANNEL_IDS),
-    blockedDiscordUserIds: parseSet(parsed.data.BLOCKED_DISCORD_USER_IDS),
-    blockedQqUserIds: parseSet(parsed.data.BLOCKED_QQ_USER_IDS)
+    allowedDiscordChannelIds: parseIdSet(
+      parsed.data.ALLOWED_DISCORD_CHANNEL_IDS,
+      "ALLOWED_DISCORD_CHANNEL_IDS"
+    ),
+    blockedDiscordUserIds: parseIdSet(parsed.data.BLOCKED_DISCORD_USER_IDS, "BLOCKED_DISCORD_USER_IDS"),
+    blockedQqUserIds: parseIdSet(parsed.data.BLOCKED_QQ_USER_IDS, "BLOCKED_QQ_USER_IDS")
   };
 }
 
@@ -145,6 +154,8 @@ function parseBridgePairs(input: string): BridgePair[] {
     if (!discordChannelId || !qqGroupId) {
       throw new Error(`Invalid BRIDGE_PAIRS entry: ${entry}`);
     }
+    assertNumericId(discordChannelId, "BRIDGE_PAIRS Discord channel id");
+    assertNumericId(qqGroupId, "BRIDGE_PAIRS QQ group id");
 
     return { discordChannelId, qqGroupId, direction };
   });
@@ -199,6 +210,19 @@ function parseKeyValueMap(input: string | undefined): Map<string, string> {
     }
 
     map.set(key, value);
+  }
+
+  return map;
+}
+
+function parseIdMap(
+  input: string | undefined,
+  labels: { keyLabel: string; valueLabel: string }
+): Map<string, string> {
+  const map = parseKeyValueMap(input);
+  for (const [key, value] of map.entries()) {
+    assertNumericId(key, labels.keyLabel);
+    assertNumericId(value, labels.valueLabel);
   }
 
   return map;
@@ -328,6 +352,30 @@ function parseSet(input: string | undefined): Set<string> {
   return new Set(splitList(input ?? ""));
 }
 
+function parseIdSet(input: string | undefined, label: string): Set<string> {
+  const set = parseSet(input);
+  for (const value of set) {
+    assertNumericId(value, label);
+  }
+
+  return set;
+}
+
+function parseWebSocketUrl(input: string, label: string): string {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new Error(`${label} must be a valid ws:// or wss:// URL`);
+  }
+
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error(`${label} must use ws:// or wss://`);
+  }
+
+  return url.toString();
+}
+
 function assertUnique(values: string[], label: string): void {
   const seen = new Set<string>();
   for (const value of values) {
@@ -335,6 +383,12 @@ function assertUnique(values: string[], label: string): void {
       throw new Error(`${label} is duplicated: ${value}`);
     }
     seen.add(value);
+  }
+}
+
+function assertNumericId(value: string, label: string): void {
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${label} must be numeric: ${value}`);
   }
 }
 

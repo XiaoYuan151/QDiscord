@@ -140,4 +140,50 @@ describe("config", () => {
       })
     ).toThrow("NAPCAT_ACCESS_TOKEN must be set to a real secret");
   });
+
+  it("rejects invalid NapCat WebSocket URLs", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        NAPCAT_WS_URL: "http://127.0.0.1:3001"
+      })
+    ).toThrow("NAPCAT_WS_URL must use ws:// or wss://");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        NAPCAT_WS_URL: "not a url"
+      })
+    ).toThrow("NAPCAT_WS_URL must be a valid");
+  });
+
+  it("rejects non-numeric route, mapping, filter, and guild ids", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        BRIDGE_PAIRS: "abc:222"
+      })
+    ).toThrow("BRIDGE_PAIRS Discord channel id must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        QQ_TO_DISCORD_USER_MAP: "1:discord-user"
+      })
+    ).toThrow("QQ_TO_DISCORD_USER_MAP Discord user id must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        STATUS_COMMAND_GUILD_IDS: "guild"
+      })
+    ).toThrow("STATUS_COMMAND_GUILD_IDS must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        BLOCKED_QQ_USER_IDS: "qq-user"
+      })
+    ).toThrow("BLOCKED_QQ_USER_IDS must be numeric");
+  });
 });
