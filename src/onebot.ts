@@ -3,13 +3,21 @@ import { EventEmitter } from "node:events";
 
 import WebSocket from "ws";
 
-import type { CqSegment, OneBotMessageEvent } from "./types.js";
+import type {
+  CqSegment,
+  OneBotMessageEvent,
+  OneBotNoticeEvent,
+  OneBotSendMessageData
+} from "./types.js";
 
 interface OneBotClientOptions {
   wsUrl: string;
   accessToken?: string;
-  reconnectMs: number;
-  actionTimeoutMs?: number;
+  reconnectInitialMs: number;
+  reconnectMaxMs: number;
+  heartbeatIntervalMs: number;
+  heartbeatTimeoutMs: number;
+  actionTimeoutMs: number;
 }
 
 interface PendingAction<T = unknown> {
@@ -36,8 +44,11 @@ export class OneBotClient extends EventEmitter {
   private readonly pending = new Map<string, PendingAction>();
   private ws?: WebSocket;
   private reconnectTimer?: NodeJS.Timeout;
+  private heartbeatTimer?: NodeJS.Timeout;
+  private heartbeatTimeoutTimer?: NodeJS.Timeout;
   private shouldReconnect = true;
   private selfQQIdValue?: string;
+  private reconnectAttemptsValue = 0;
 
   constructor(private readonly options: OneBotClientOptions) {
     super();
@@ -45,6 +56,18 @@ export class OneBotClient extends EventEmitter {
 
   get selfQQId(): string | undefined {
     return this.selfQQIdValue;
+  }
+
+  get connected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  get connecting(): boolean {
+    return this.ws?.readyState === WebSocket.CONNECTING;
+  }
+
+  get reconnectAttempts(): number {
+    return this.reconnectAttemptsValue;
   }
 
   connect(): void {
@@ -58,17 +81,32 @@ export class OneBotClient extends EventEmitter {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
     }
+    this.clearHeartbeatTimers();
 
     this.ws?.close();
     this.ws = undefined;
     this.rejectAllPending(new Error("OneBot client disconnected"));
   }
 
-  async sendGroupMessage(groupId: string, message: CqSegment[]): Promise<unknown> {
+  async sendGroupMessage(groupId: string, message: CqSegment[]): Promise<OneBotSendMessageData> {
     return this.sendAction("send_group_msg", {
       group_id: normalizeOneBotId(groupId),
       message,
       auto_escape: false
+    });
+  }
+
+  async deleteMessage(messageId: string): Promise<unknown> {
+    return this.sendAction("delete_msg", {
+      message_id: normalizeOneBotId(messageId)
+    });
+  }
+
+  async uploadGroupFile(groupId: string, file: string, name?: string): Promise<unknown> {
+    return this.sendAction("upload_group_file", {
+      group_id: normalizeOneBotId(groupId),
+      file,
+      ...(name ? { name } : {})
     });
   }
 
@@ -79,7 +117,7 @@ export class OneBotClient extends EventEmitter {
     }
 
     const echo = randomUUID();
-    const timeoutMs = this.options.actionTimeoutMs ?? 15_000;
+    const timeoutMs = this.options.actionTimeoutMs;
     const payload = JSON.stringify({ action, params, echo });
 
     return new Promise<T>((resolve, reject) => {
@@ -118,7 +156,9 @@ export class OneBotClient extends EventEmitter {
     this.ws = ws;
 
     ws.on("open", () => {
+      this.reconnectAttemptsValue = 0;
       this.emit("open");
+      this.scheduleHeartbeat();
       void this.refreshLoginInfo();
     });
 
@@ -129,12 +169,18 @@ export class OneBotClient extends EventEmitter {
     ws.on("close", (code, reason) => {
       this.emit("close", code, reason.toString());
       this.rejectAllPending(new Error(`OneBot WebSocket closed: ${code} ${reason.toString()}`));
+      this.clearHeartbeatTimers();
       this.ws = undefined;
       this.scheduleReconnect();
     });
 
     ws.on("error", (error) => {
       this.emit("error", error);
+    });
+
+    ws.on("pong", () => {
+      this.clearHeartbeatTimeout();
+      this.scheduleHeartbeat();
     });
   }
 
@@ -168,6 +214,9 @@ export class OneBotClient extends EventEmitter {
     if ((packet as OneBotMessageEvent).post_type === "message") {
       this.emit("message", packet as OneBotMessageEvent);
     }
+    if ((packet as OneBotNoticeEvent).post_type === "notice") {
+      this.emit("notice", packet as OneBotNoticeEvent);
+    }
   }
 
   private resolvePendingAction(packet: OneBotActionResponse): void {
@@ -199,10 +248,60 @@ export class OneBotClient extends EventEmitter {
       return;
     }
 
+    this.reconnectAttemptsValue += 1;
+    const delayMs = Math.min(
+      this.options.reconnectMaxMs,
+      this.options.reconnectInitialMs * 2 ** Math.max(0, this.reconnectAttemptsValue - 1)
+    );
+    this.emit("reconnectScheduled", {
+      attempt: this.reconnectAttemptsValue,
+      delayMs
+    });
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.openSocket();
-    }, this.options.reconnectMs);
+    }, delayMs);
+  }
+
+  private scheduleHeartbeat(): void {
+    if (this.options.heartbeatIntervalMs <= 0 || this.options.heartbeatTimeoutMs <= 0) {
+      return;
+    }
+
+    if (this.heartbeatTimer || this.heartbeatTimeoutTimer) {
+      return;
+    }
+
+    this.heartbeatTimer = setTimeout(() => {
+      this.heartbeatTimer = undefined;
+      const ws = this.ws;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      ws.ping();
+      this.heartbeatTimeoutTimer = setTimeout(() => {
+        this.heartbeatTimeoutTimer = undefined;
+        this.emit("error", new Error("OneBot WebSocket heartbeat timed out"));
+        ws.terminate();
+      }, this.options.heartbeatTimeoutMs);
+    }, this.options.heartbeatIntervalMs);
+  }
+
+  private clearHeartbeatTimers(): void {
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
+    this.clearHeartbeatTimeout();
+  }
+
+  private clearHeartbeatTimeout(): void {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+      this.heartbeatTimeoutTimer = undefined;
+    }
   }
 
   private buildEndpoint(): string {

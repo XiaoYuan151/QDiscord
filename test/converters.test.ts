@@ -3,8 +3,13 @@ import { describe, expect, it } from "vitest";
 import { normalizeOneBotMessage, parseCqMessage, stringifyCqSegments } from "../src/cq.js";
 import {
   appendDiscordAttachmentsToQqSegments,
+  chunkQqSegments,
+  discordMessageToQqSegments,
+  discordReactionToQqSegments,
   discordTextToQqSegments,
-  qqSegmentsToDiscord
+  qqReactionToDiscordContent,
+  qqSegmentsToDiscord,
+  splitDiscordContent
 } from "../src/converters.js";
 import type { CqSegment } from "../src/types.js";
 
@@ -53,6 +58,25 @@ describe("QQ to Discord conversion", () => {
     expect(result.files).toEqual(["https://example.com/a.png"]);
     expect(result.mentionUserIds).toEqual(["999"]);
   });
+
+  it("extracts reply ids and forwards media urls as Discord files", () => {
+    const result = qqSegmentsToDiscord(
+      [
+        { type: "reply", data: { id: "42" } },
+        { type: "record", data: { url: "https://example.com/a.ogg" } },
+        { type: "video", data: { file: "https://example.com/a.mp4" } },
+        { type: "file", data: { file: "local-file.zip" } }
+      ],
+      {
+        qqToDiscordUserMap: new Map(),
+        cqFaceEmojiMap: new Map()
+      }
+    );
+
+    expect(result.replyToMessageId).toBe("42");
+    expect(result.files).toEqual(["https://example.com/a.ogg", "https://example.com/a.mp4"]);
+    expect(result.content).toBe("[QQ file: local-file.zip]");
+  });
 });
 
 describe("Discord to QQ conversion", () => {
@@ -84,16 +108,170 @@ describe("Discord to QQ conversion", () => {
     ]);
   });
 
+  it("maps configured Unicode emoji to QQ faces", () => {
+    expect(
+      discordTextToQqSegments("ok 🙂 done", {
+        discordToQqUserMap: new Map(),
+        discordEmojiToCqFaceMap: new Map([["🙂", "14"]])
+      })
+    ).toEqual([
+      { type: "text", data: { text: "ok " } },
+      { type: "face", data: { id: "14" } },
+      { type: "text", data: { text: " done" } }
+    ]);
+  });
+
+  it("renders unmapped users, roles, and channels by resolved names", () => {
+    expect(
+      discordTextToQqSegments("<@111> <@&222> <#333>", {
+        discordToQqUserMap: new Map(),
+        discordEmojiToCqFaceMap: new Map(),
+        resolveUserName: () => "Alice",
+        resolveRoleName: () => "Mods",
+        resolveChannelName: () => "general"
+      })
+    ).toEqual([{ type: "text", data: { text: "@Alice @Mods #general" } }]);
+  });
+
   it("adds image attachments as CQ image segments", () => {
     const segments: CqSegment[] = [];
     appendDiscordAttachmentsToQqSegments(segments, [
       { url: "https://example.com/a.webp", contentType: "image/webp", name: "a.webp" },
+      { url: "https://example.com/voice.ogg", contentType: "audio/ogg", name: "voice.ogg" },
+      { url: "https://example.com/movie.mp4", contentType: "video/mp4", name: "movie.mp4" },
       { url: "https://example.com/file.zip", contentType: "application/zip", name: "file.zip" }
     ]);
 
     expect(segments).toEqual([
       { type: "image", data: { file: "https://example.com/a.webp" } },
-      { type: "text", data: { text: " [attachment file.zip: https://example.com/file.zip]" } }
+      { type: "record", data: { file: "https://example.com/voice.ogg" } },
+      { type: "video", data: { file: "https://example.com/movie.mp4" } },
+      {
+        type: "file",
+        data: { file: "https://example.com/file.zip", name: "file.zip" }
+      }
     ]);
+  });
+
+  it("sanitizes generic attachment names", () => {
+    const segments: CqSegment[] = [];
+    appendDiscordAttachmentsToQqSegments(segments, [
+      {
+        url: "https://example.com/file.zip",
+        contentType: "application/zip",
+        name: "../bad\u0000name.zip"
+      }
+    ]);
+
+    expect(segments).toEqual([
+      {
+        type: "file",
+        data: { file: "https://example.com/file.zip", name: ".._badname.zip" }
+      }
+    ]);
+  });
+
+  it("builds Discord message CQ segments with replies, stickers, embeds, and media", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "hello",
+          senderLabel: "[Discord] Alice",
+          replyToQqMessageId: "77",
+          stickers: [{ name: "wave", url: "https://example.com/sticker.png" }],
+          embeds: [
+            {
+              title: "Title",
+              description: "Description",
+              url: "https://example.com/post",
+              image: { url: "https://example.com/image.png" }
+            }
+          ]
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      { type: "reply", data: { id: "77" } },
+      { type: "text", data: { text: "[Discord] Alice: hello" } },
+      { type: "image", data: { file: "https://example.com/sticker.png" } },
+      {
+        type: "text",
+        data: {
+          text: "\n[Embed]\nTitle (https://example.com/post)\nDescription"
+        }
+      },
+      { type: "image", data: { file: "https://example.com/image.png" } }
+    ]);
+  });
+
+  it("preserves Discord reply context when no QQ reply id is available", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "hello",
+          senderLabel: "[Discord] Alice",
+          replyFallbackText: "[Discord reply to 123]"
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      {
+        type: "text",
+        data: { text: "[Discord reply to 123]\n[Discord] Alice: hello" }
+      }
+    ]);
+  });
+
+  it("splits long Discord content and QQ text segments", () => {
+    const discordChunks = splitDiscordContent("alpha beta gamma delta epsilon zeta eta", 32);
+    expect(discordChunks.length).toBeGreaterThan(1);
+    expect(discordChunks[0]).toContain("[part 1/");
+    expect(discordChunks.every((chunk) => chunk.length <= 32)).toBe(true);
+
+    expect(
+      chunkQqSegments([{ type: "text", data: { text: "abcdef" } }], 3)
+    ).toEqual([
+      [{ type: "text", data: { text: "abc" } }],
+      [{ type: "text", data: { text: "def" } }]
+    ]);
+  });
+
+  it("converts Discord reactions to QQ reply segments", () => {
+    expect(
+      discordReactionToQqSegments(
+        {
+          action: "added",
+          emojiText: "<:qq_smile:222>",
+          userLabel: "Alice",
+          replyToQqMessageId: "77"
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map([["222", "14"]])
+        }
+      )
+    ).toEqual([
+      { type: "reply", data: { id: "77" } },
+      { type: "text", data: { text: "[Discord reaction] Alice added " } },
+      { type: "face", data: { id: "14" } }
+    ]);
+  });
+
+  it("converts QQ reactions to Discord content", () => {
+    expect(
+      qqReactionToDiscordContent(
+        { action: "removed", emojiId: "14", userId: "123" },
+        {
+          qqToDiscordUserMap: new Map(),
+          cqFaceEmojiMap: new Map([["14", "🙂"]])
+        }
+      )
+    ).toBe("[QQ reaction] User 123 removed 🙂");
   });
 });

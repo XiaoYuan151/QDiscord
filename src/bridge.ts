@@ -1,45 +1,128 @@
 import {
+  ApplicationCommandOptionType,
   Client,
   Events,
   GatewayIntentBits,
-  type MessageCreateOptions,
+  Partials,
+  PermissionFlagsBits,
+  type ApplicationCommand,
+  type ApplicationCommandDataResolvable,
+  type ChatInputCommandInteraction,
+  type Collection,
+  type GuildMember,
   type Message,
-  type Snowflake
+  type MessageCreateOptions,
+  type MessageReaction,
+  type PartialGuildMember,
+  type PartialMessageReaction,
+  type PartialMessage,
+  type PartialUser,
+  type Snowflake,
+  type User
 } from "discord.js";
 
-import { appendTextSegment, normalizeOneBotMessage } from "./cq.js";
+import { normalizeOneBotMessage } from "./cq.js";
 import {
-  appendDiscordAttachmentsToQqSegments,
-  discordTextToQqSegments,
+  chunkQqSegments,
+  discordMessageToQqSegments,
+  discordReactionToQqSegments,
   escapeDiscordMarkdown,
+  qqReactionToDiscordContent,
   qqSegmentsToDiscord,
-  truncateDiscordContent
+  splitDiscordContent
 } from "./converters.js";
+import { createLogger, type Logger } from "./logger.js";
 import { OneBotClient } from "./onebot.js";
-import type { AppConfig, CqSegment, OneBotMessageEvent } from "./types.js";
+import { AsyncTaskQueue } from "./queue.js";
+import type {
+  AppConfig,
+  BridgeRuntimeStatus,
+  CqSegment,
+  OneBotMessageEvent,
+  OneBotNoticeEvent,
+  OneBotSendMessageData
+} from "./types.js";
 
 type SendableTextChannel = {
-  send(options: MessageCreateOptions): Promise<unknown>;
+  id: string;
+  send(options: MessageCreateOptions): Promise<Message>;
+  sendTyping?: () => Promise<void>;
 };
+
+type StatusCommandData = ApplicationCommandDataResolvable & { name: string };
+
+type CommandManagerLike = {
+  fetch(): Promise<Collection<Snowflake, ApplicationCommand>>;
+  create(data: StatusCommandData): Promise<unknown>;
+  edit(commandId: Snowflake, data: StatusCommandData): Promise<unknown>;
+};
+
+interface MessageLink {
+  discordMessageId: string;
+  discordChannelId: string;
+  qqGroupId: string;
+  qqMessageId: string;
+  createdAt: number;
+}
+
+interface ForwardOptions {
+  edited?: boolean;
+}
 
 export class QDiscordBridge {
   private readonly discord: Client;
   private readonly oneBot: OneBotClient;
+  private readonly discordToQqQueue: AsyncTaskQueue;
+  private readonly qqToDiscordQueue: AsyncTaskQueue;
+  private readonly discordLinks = new Map<string, MessageLink>();
+  private readonly qqLinks = new Map<string, MessageLink>();
+  private readonly startedAt = new Date();
+  private stopping = false;
 
-  constructor(private readonly config: AppConfig) {
+  constructor(
+    private readonly config: AppConfig,
+    private readonly logger: Logger = createLogger(config.logLevel)
+  ) {
     this.discord = new Client({
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions
+      ],
+      partials: [
+        Partials.Channel,
+        Partials.GuildMember,
+        Partials.Message,
+        Partials.Reaction,
+        Partials.User
       ]
     });
 
     this.oneBot = new OneBotClient({
       wsUrl: config.napcatWsUrl,
       accessToken: config.napcatAccessToken,
-      reconnectMs: config.napcatReconnectMs
+      reconnectInitialMs: config.napcatReconnectInitialMs,
+      reconnectMaxMs: config.napcatReconnectMaxMs,
+      heartbeatIntervalMs: config.napcatHeartbeatIntervalMs,
+      heartbeatTimeoutMs: config.napcatHeartbeatTimeoutMs,
+      actionTimeoutMs: config.oneBotActionTimeoutMs
+    });
+
+    this.discordToQqQueue = new AsyncTaskQueue({
+      name: "discord-to-qq",
+      concurrency: config.queueConcurrency,
+      minDelayMs: config.queueMinDelayMs,
+      maxRetries: config.queueMaxRetries,
+      retryBaseDelayMs: config.queueRetryBaseDelayMs
+    });
+    this.qqToDiscordQueue = new AsyncTaskQueue({
+      name: "qq-to-discord",
+      concurrency: config.queueConcurrency,
+      minDelayMs: config.queueMinDelayMs,
+      maxRetries: config.queueMaxRetries,
+      retryBaseDelayMs: config.queueRetryBaseDelayMs
     });
   }
 
@@ -51,68 +134,430 @@ export class QDiscordBridge {
     await this.discord.login(this.config.discordToken);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopping = true;
+    const [discordToQqDrained, qqToDiscordDrained] = await Promise.all([
+      this.discordToQqQueue.waitForIdle(this.config.shutdownDrainTimeoutMs),
+      this.qqToDiscordQueue.waitForIdle(this.config.shutdownDrainTimeoutMs)
+    ]);
+    if (!discordToQqDrained || !qqToDiscordDrained) {
+      this.logger.warn("Bridge queues did not drain before shutdown timeout", {
+        discordToQq: this.discordToQqQueue.stats(),
+        qqToDiscord: this.qqToDiscordQueue.stats()
+      });
+    }
+
     this.oneBot.disconnect();
     this.discord.destroy();
   }
 
+  getStatus(): BridgeRuntimeStatus {
+    const now = Date.now();
+    return {
+      startedAt: this.startedAt.toISOString(),
+      uptimeSeconds: Math.floor((now - this.startedAt.getTime()) / 1000),
+      discord: {
+        ready: this.discord.isReady(),
+        userTag: this.discord.user?.tag,
+        guildCount: this.discord.guilds.cache.size,
+        pingMs: this.discord.ws.ping
+      },
+      oneBot: {
+        connected: this.oneBot.connected,
+        connecting: this.oneBot.connecting,
+        selfQQId: this.oneBot.selfQQId,
+        reconnectAttempts: this.oneBot.reconnectAttempts
+      },
+      queues: {
+        [this.discordToQqQueue.name]: this.discordToQqQueue.stats(),
+        [this.qqToDiscordQueue.name]: this.qqToDiscordQueue.stats()
+      },
+      bridgePairs: this.config.bridgePairs.length,
+      messageLinks: {
+        tracked: this.discordLinks.size,
+        maxEntries: this.config.messageLinkMaxEntries,
+        ttlMs: this.config.messageLinkTtlMs
+      },
+      routes: this.config.bridgePairs.map((pair) => ({
+        discordChannelId: pair.discordChannelId,
+        qqGroupId: pair.qqGroupId,
+        direction: pair.direction
+      }))
+    };
+  }
+
   private registerDiscordHandlers(): void {
     this.discord.once(Events.ClientReady, (client) => {
-      console.log(`Discord bot logged in as ${client.user.tag}`);
-      console.log(`Loaded ${this.config.bridgePairs.length} bridge pair(s)`);
+      this.logger.info("Discord bot logged in", {
+        userTag: client.user.tag,
+        bridgePairs: this.config.bridgePairs.length
+      });
+      if (this.config.statusCommandEnabled) {
+        void this.registerStatusCommand().catch((error) => {
+          this.logger.error("Failed to register Discord status command", { error });
+        });
+      }
+      void this.validateBridgeRoutes().catch((error) => {
+        this.logger.error("Failed to validate bridge routes", { error });
+      });
     });
 
     this.discord.on(Events.MessageCreate, (message) => {
-      void this.handleDiscordMessage(message).catch((error) => {
-        console.error("Failed to bridge Discord message to QQ", error);
+      this.enqueueDiscordToQq(`message:${message.id}`, () => this.handleDiscordMessage(message));
+    });
+
+    this.discord.on(Events.MessageUpdate, (_oldMessage, newMessage) => {
+      this.enqueueDiscordToQq(`message-update:${newMessage.id}`, async () => {
+        const message = await this.resolveFullMessage(newMessage);
+        if (message) {
+          await this.handleDiscordMessageUpdate(message);
+        }
+      });
+    });
+
+    this.discord.on(Events.MessageDelete, (message) => {
+      this.enqueueDiscordToQq(`message-delete:${message.id}`, () =>
+        this.handleDiscordMessageDelete(message)
+      );
+    });
+
+    this.discord.on(Events.MessageReactionAdd, (reaction, user) => {
+      this.enqueueDiscordToQq(`reaction-add:${reaction.message.id}:${user.id}`, () =>
+        this.handleDiscordReaction(reaction, user, "added")
+      );
+    });
+
+    this.discord.on(Events.MessageReactionRemove, (reaction, user) => {
+      this.enqueueDiscordToQq(`reaction-remove:${reaction.message.id}:${user.id}`, () =>
+        this.handleDiscordReaction(reaction, user, "removed")
+      );
+    });
+
+    this.discord.on(Events.InteractionCreate, (interaction) => {
+      if (!interaction.isChatInputCommand()) {
+        return;
+      }
+
+      void this.handleChatInputCommand(interaction).catch((error) => {
+        this.logger.error("Failed to handle Discord interaction", { error });
+      });
+    });
+
+    this.discord.on(Events.GuildMemberAdd, (member) => {
+      this.enqueueDiscordToQq(`guild-member-add:${member.id}`, () =>
+        this.handleDiscordMemberEvent(member, "joined")
+      );
+    });
+
+    this.discord.on(Events.GuildMemberRemove, (member) => {
+      this.enqueueDiscordToQq(`guild-member-remove:${member.id}`, () =>
+        this.handleDiscordMemberEvent(member, "left")
+      );
+    });
+
+    this.discord.on(Events.Error, (error) => {
+      this.logger.error("Discord client error", { error });
+    });
+
+    this.discord.on(Events.ShardReady, (id) => {
+      this.logger.info("Discord shard ready", { shardId: id });
+    });
+
+    this.discord.on(Events.ShardDisconnect, (event, id) => {
+      this.logger.warn("Discord shard disconnected", {
+        shardId: id,
+        code: event.code,
+        reason: event.reason
       });
     });
   }
 
   private registerOneBotHandlers(): void {
     this.oneBot.on("open", () => {
-      console.log("Connected to NapCat OneBot WebSocket");
+      this.logger.info("Connected to NapCat OneBot WebSocket");
     });
 
     this.oneBot.on("close", (code, reason) => {
-      console.warn(`NapCat OneBot WebSocket closed: ${code} ${reason}`);
+      this.logger.warn("NapCat OneBot WebSocket closed", { code, reason });
+    });
+
+    this.oneBot.on("reconnectScheduled", (event) => {
+      this.logger.warn("NapCat reconnect scheduled", event as Record<string, unknown>);
     });
 
     this.oneBot.on("loginInfo", (info) => {
-      console.log(`NapCat login: ${info.nickname ?? "unknown"} (${info.user_id ?? "unknown"})`);
-    });
-
-    this.oneBot.on("message", (event) => {
-      void this.handleOneBotMessage(event as OneBotMessageEvent).catch((error) => {
-        console.error("Failed to bridge QQ message to Discord", error);
+      const data = info as { nickname?: string; user_id?: number | string };
+      this.logger.info("NapCat login info refreshed", {
+        nickname: data.nickname ?? "unknown",
+        userId: data.user_id ?? "unknown"
       });
     });
 
+    this.oneBot.on("message", (event) => {
+      this.enqueueQqToDiscord(`qq-message:${(event as OneBotMessageEvent).message_id ?? "unknown"}`, () =>
+        this.handleOneBotMessage(event as OneBotMessageEvent)
+      );
+    });
+
+    this.oneBot.on("notice", (event) => {
+      this.enqueueQqToDiscord(
+        `qq-notice:${(event as OneBotNoticeEvent).notice_type}:${(event as OneBotNoticeEvent).message_id ?? "unknown"}`,
+        () => this.handleOneBotNotice(event as OneBotNoticeEvent)
+      );
+    });
+
     this.oneBot.on("error", (error) => {
-      console.error("NapCat OneBot error", error);
+      this.logger.error("NapCat OneBot error", { error });
     });
   }
 
-  private async handleDiscordMessage(message: Message): Promise<void> {
-    const qqGroupId = this.config.discordChannelToQqGroup.get(message.channelId);
-    if (!qqGroupId) {
+  private async registerStatusCommand(): Promise<void> {
+    const commandData = {
+      name: this.config.statusCommandName,
+      description: "QDiscord bridge controls",
+      options: [
+        {
+          type: ApplicationCommandOptionType.Subcommand,
+          name: "status",
+          description: "Show Discord and QQ bridge health"
+        }
+      ]
+    } satisfies ApplicationCommandDataResolvable;
+
+    if (this.config.statusCommandGuildIds.size === 0) {
+      if (!this.discord.application?.commands) {
+        return;
+      }
+
+      await upsertStatusCommand(this.discord.application.commands, commandData);
+      this.logger.info("Discord status command registered", {
+        command: `/${this.config.statusCommandName} status`,
+        scope: "global"
+      });
       return;
     }
 
-    if (message.author.id === this.discord.user?.id) {
+    for (const guildId of this.config.statusCommandGuildIds) {
+      const guild = await this.discord.guilds.fetch(guildId as Snowflake);
+      await upsertStatusCommand(guild.commands, commandData);
+      this.logger.info("Discord status command registered", {
+        command: `/${this.config.statusCommandName} status`,
+        scope: "guild",
+        guildId
+      });
+    }
+  }
+
+  private async validateBridgeRoutes(): Promise<void> {
+    const selfUserId = this.discord.user?.id;
+    if (!selfUserId) {
       return;
     }
 
-    if (!this.config.bridgeBotMessages && message.author.bot) {
+    const requiredPermissions = [
+      { name: "ViewChannel", flag: PermissionFlagsBits.ViewChannel },
+      { name: "SendMessages", flag: PermissionFlagsBits.SendMessages },
+      { name: "AttachFiles", flag: PermissionFlagsBits.AttachFiles },
+      { name: "ReadMessageHistory", flag: PermissionFlagsBits.ReadMessageHistory }
+    ];
+
+    for (const pair of this.config.bridgePairs) {
+      const channel = await this.discord.channels.fetch(pair.discordChannelId as Snowflake);
+      if (!channel?.isTextBased() || !("send" in channel)) {
+        this.logger.warn("Configured Discord route is not a sendable text channel", {
+          discordChannelId: pair.discordChannelId,
+          qqGroupId: pair.qqGroupId
+        });
+        continue;
+      }
+
+      const permissions = (
+        channel as {
+          permissionsFor?: (userId: string) => { has(permission: bigint): boolean } | null;
+        }
+      ).permissionsFor?.(selfUserId);
+      const missing = requiredPermissions
+        .filter((permission) => !permissions?.has(permission.flag))
+        .map((permission) => permission.name);
+
+      if (missing.length > 0) {
+        this.logger.warn("Discord route is missing recommended permissions", {
+          discordChannelId: pair.discordChannelId,
+          qqGroupId: pair.qqGroupId,
+          missing
+        });
+      }
+    }
+  }
+
+  private async handleChatInputCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+    if (
+      !this.config.statusCommandEnabled ||
+      interaction.commandName !== this.config.statusCommandName ||
+      interaction.options.getSubcommand(false) !== "status"
+    ) {
       return;
     }
 
-    const segments = this.discordMessageToQqSegments(message);
+    await interaction.reply({
+      content: formatStatusForDiscord(this.getStatus()),
+      ephemeral: true
+    });
+  }
+
+  private async handleDiscordMessage(message: Message, options: ForwardOptions = {}): Promise<void> {
+    const pair = this.config.discordChannelToBridgePair.get(message.channelId);
+    if (!pair || pair.direction === "qq-to-discord" || !this.shouldBridgeDiscordMessage(message)) {
+      return;
+    }
+    const qqGroupId = pair.qqGroupId;
+
+    const referencedDiscordMessageId = message.reference?.messageId;
+    const replyToQqMessageId = referencedDiscordMessageId
+      ? this.getLinkByDiscordMessageId(referencedDiscordMessageId)?.qqMessageId
+      : undefined;
+    const senderName = getDiscordSenderName(message);
+    const senderLabel = this.config.showSenderName
+      ? `[Discord${options.edited ? " edited" : ""}] ${senderName}`
+      : options.edited
+        ? "[Discord edited]"
+        : undefined;
+    const segments = discordMessageToQqSegments(
+      {
+        content: message.content,
+        senderLabel,
+        replyToQqMessageId,
+        replyFallbackText:
+          referencedDiscordMessageId && !replyToQqMessageId
+            ? `[Discord reply to ${referencedDiscordMessageId}]`
+            : undefined,
+        attachments: message.attachments.values(),
+        stickers: message.stickers.values(),
+        embeds: message.embeds
+      },
+      {
+        discordToQqUserMap: this.config.discordToQqUserMap,
+        discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap,
+        resolveUserName: (userId) =>
+          message.mentions.members?.get(userId)?.displayName ??
+          message.mentions.users.get(userId)?.username,
+        resolveChannelName: (channelId) => {
+          const channel = message.mentions.channels.get(channelId as Snowflake);
+          return channel && "name" in channel && typeof channel.name === "string"
+            ? channel.name
+            : undefined;
+        },
+        resolveRoleName: (roleId) => message.mentions.roles.get(roleId as Snowflake)?.name
+      }
+    );
+
     if (segments.length === 0) {
       return;
     }
 
-    await this.oneBot.sendGroupMessage(qqGroupId, segments);
+    const results = await this.sendQqSegments(qqGroupId, segments);
+    const result = results.find((item) => item.message_id !== undefined);
+    if (result?.message_id !== undefined) {
+      this.rememberMessageLink({
+        discordMessageId: message.id,
+        discordChannelId: message.channelId,
+        qqGroupId,
+        qqMessageId: String(result.message_id),
+        createdAt: Date.now()
+      });
+    }
+  }
+
+  private async handleDiscordMessageUpdate(message: Message): Promise<void> {
+    if (message.author.id === this.discord.user?.id) {
+      return;
+    }
+
+    const existing = this.getLinkByDiscordMessageId(message.id);
+    if (existing) {
+      if (!this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+        return;
+      }
+
+      await this.deleteQqMessage(existing.qqMessageId);
+      this.forgetByDiscordMessageId(message.id);
+    }
+
+    await this.handleDiscordMessage(message, { edited: true });
+  }
+
+  private async handleDiscordMessageDelete(message: Message | PartialMessage): Promise<void> {
+    const existing = this.getLinkByDiscordMessageId(message.id);
+    if (!existing) {
+      return;
+    }
+
+    if (!this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+      return;
+    }
+
+    await this.deleteQqMessage(existing.qqMessageId);
+    this.forgetByDiscordMessageId(message.id);
+  }
+
+  private async handleDiscordMemberEvent(
+    member: GuildMember | PartialGuildMember,
+    action: "joined" | "left"
+  ): Promise<void> {
+    if (!this.config.bridgeMemberEvents || member.user.bot) {
+      return;
+    }
+
+    for (const pair of this.config.bridgePairs) {
+      if (pair.direction === "qq-to-discord") {
+        continue;
+      }
+
+      const channel = await this.discord.channels.fetch(pair.discordChannelId as Snowflake);
+      if (!channel || !("guildId" in channel) || channel.guildId !== member.guild.id) {
+        continue;
+      }
+
+      await this.sendQqSystemMessage(
+        pair.qqGroupId,
+        `[Discord] ${member.user.tag} ${action} ${member.guild.name}`
+      );
+    }
+  }
+
+  private async handleDiscordReaction(
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser,
+    action: "added" | "removed"
+  ): Promise<void> {
+    const fullUser = user.partial ? await user.fetch() : user;
+    if (fullUser.id === this.discord.user?.id || (!this.config.bridgeBotMessages && fullUser.bot)) {
+      return;
+    }
+
+    const fullReaction = reaction.partial ? await reaction.fetch() : reaction;
+    const discordChannelId = fullReaction.message.channelId;
+    const link = this.getLinkByDiscordMessageId(fullReaction.message.id);
+    const pair = this.config.discordChannelToBridgePair.get(discordChannelId);
+    const qqGroupId = link?.qqGroupId ?? pair?.qqGroupId;
+    if (!qqGroupId || (!link && pair?.direction === "qq-to-discord")) {
+      return;
+    }
+
+    const segments = discordReactionToQqSegments(
+      {
+        action,
+        emojiText: formatDiscordReactionEmoji(fullReaction),
+        userLabel: fullUser.globalName ?? fullUser.username,
+        replyToQqMessageId: link?.qqMessageId
+      },
+      {
+        discordToQqUserMap: this.config.discordToQqUserMap,
+        discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap
+      }
+    );
+
+    await this.sendQqSegments(qqGroupId, segments);
   }
 
   private async handleOneBotMessage(event: OneBotMessageEvent): Promise<void> {
@@ -124,14 +569,20 @@ export class QDiscordBridge {
       return;
     }
 
-    const discordChannelId = this.config.qqGroupToDiscordChannel.get(String(event.group_id));
-    if (!discordChannelId) {
+    if (event.user_id !== undefined && this.config.blockedQqUserIds.has(String(event.user_id))) {
       return;
     }
 
+    const qqGroupId = String(event.group_id);
+    const pair = this.config.qqGroupToBridgePair.get(qqGroupId);
+    if (!pair || pair.direction === "discord-to-qq") {
+      return;
+    }
+    const discordChannelId = pair.discordChannelId;
+
     const channel = await this.fetchDiscordTextChannel(discordChannelId);
     if (!channel) {
-      console.warn(`Discord channel is not text-sendable: ${discordChannelId}`);
+      this.logger.warn("Discord channel is not text-sendable", { discordChannelId });
       return;
     }
 
@@ -147,48 +598,227 @@ export class QDiscordBridge {
 
     const senderName = getQqSenderName(event);
     const prefix = this.config.showSenderName ? `**${escapeDiscordMarkdown(senderName)}**: ` : "";
-    const content = truncateDiscordContent(`${prefix}${converted.content}`.trim());
+    const content = `${prefix}${converted.content}`.trim();
+    const replyToDiscordMessageId = converted.replyToMessageId
+      ? this.getLinkByQqMessageId(converted.replyToMessageId)?.discordMessageId
+      : undefined;
+    const replyFallback =
+      converted.replyToMessageId && !replyToDiscordMessageId
+        ? `[reply to QQ message ${converted.replyToMessageId}]\n`
+        : "";
+    const sentMessages = await this.sendDiscordMessage(
+      channel,
+      `${replyFallback}${content}`.trim(),
+      converted.files,
+      {
+        users: converted.mentionUserIds,
+        roles: [],
+        parse:
+          converted.mentionEveryone && this.config.allowEveryoneMentions ? ["everyone"] : []
+      },
+      replyToDiscordMessageId
+    );
 
-    await this.sendDiscordMessage(channel, content, converted.files, {
-      users: converted.mentionUserIds,
-      roles: [],
-      parse:
-        converted.mentionEveryone && this.config.allowEveryoneMentions ? ["everyone"] : []
-    });
+    const qqMessageId = event.message_id;
+    if (qqMessageId !== undefined && sentMessages[0]) {
+      this.rememberMessageLink({
+        discordMessageId: sentMessages[0].id,
+        discordChannelId,
+        qqGroupId,
+        qqMessageId: String(qqMessageId),
+        createdAt: Date.now()
+      });
+    }
   }
 
-  private discordMessageToQqSegments(message: Message): CqSegment[] {
-    const segments: CqSegment[] = [];
+  private async handleOneBotNotice(event: OneBotNoticeEvent): Promise<void> {
+    if (event.notice_type === "group_recall" && event.message_id !== undefined) {
+      const link = this.getLinkByQqMessageId(String(event.message_id));
+      if (!link) {
+        return;
+      }
 
-    if (this.config.showSenderName) {
-      appendTextSegment(segments, `[Discord] ${getDiscordSenderName(message)}: `);
+      if (!this.routeAllowsQqToDiscord(link.qqGroupId)) {
+        return;
+      }
+
+      await this.deleteDiscordMessage(link.discordChannelId, link.discordMessageId);
+      this.forgetByQqMessageId(link.qqMessageId);
+      return;
     }
 
-    const contentSegments = discordTextToQqSegments(message.content, {
-      discordToQqUserMap: this.config.discordToQqUserMap,
-      discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap,
-      resolveUserName: (userId) =>
-        message.mentions.members?.get(userId)?.displayName ??
-        message.mentions.users.get(userId)?.username,
-      resolveChannelName: (channelId) => {
-        const channel = message.mentions.channels.get(channelId as Snowflake);
-        return channel && "name" in channel && typeof channel.name === "string"
-          ? channel.name
+    if (this.config.bridgeTypingIndicators && isOneBotTypingNotice(event)) {
+      await this.handleOneBotTypingNotice(event);
+      return;
+    }
+
+    const reaction = extractOneBotReaction(event);
+    if (reaction && event.group_id !== undefined) {
+      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+      if (!pair || pair.direction === "discord-to-qq") {
+        return;
+      }
+      const discordChannelId = pair.discordChannelId;
+
+      const channel = await this.fetchDiscordTextChannel(discordChannelId);
+      if (!channel) {
+        return;
+      }
+
+      const link =
+        event.message_id !== undefined
+          ? this.getLinkByQqMessageId(String(event.message_id))
           : undefined;
-      },
-      resolveRoleName: (roleId) => message.mentions.roles.get(roleId as Snowflake)?.name
-    });
+      await this.sendDiscordMessage(
+        channel,
+        qqReactionToDiscordContent(reaction, {
+          qqToDiscordUserMap: this.config.qqToDiscordUserMap,
+          cqFaceEmojiMap: this.config.cqFaceEmojiMap
+        }),
+        [],
+        { users: [], roles: [], parse: [] },
+        link?.discordMessageId
+      );
+      return;
+    }
 
-    segments.push(...contentSegments);
-    appendDiscordAttachmentsToQqSegments(segments, message.attachments.values());
+    if (event.notice_type === "group_upload" && event.group_id !== undefined) {
+      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+      if (!pair || pair.direction === "discord-to-qq") {
+        return;
+      }
 
-    for (const sticker of message.stickers.values()) {
-      if (sticker.url) {
-        segments.push({ type: "image", data: { file: sticker.url } });
+      await this.sendDiscordSystemMessage(pair.discordChannelId, formatOneBotGroupUpload(event));
+      return;
+    }
+
+    if (
+      this.config.bridgeMemberEvents &&
+      event.group_id !== undefined &&
+      (event.notice_type === "group_increase" || event.notice_type === "group_decrease")
+    ) {
+      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+      if (!pair || pair.direction === "discord-to-qq") {
+        return;
+      }
+      const discordChannelId = pair.discordChannelId;
+
+      const action = event.notice_type === "group_increase" ? "joined" : "left";
+      const content = `[QQ] User ${event.user_id ?? "unknown"} ${action} group ${event.group_id}`;
+      await this.sendDiscordSystemMessage(discordChannelId, content);
+    }
+  }
+
+  private async handleOneBotTypingNotice(event: OneBotNoticeEvent): Promise<void> {
+    if (event.group_id === undefined) {
+      return;
+    }
+
+    const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+    if (!pair || pair.direction === "discord-to-qq") {
+      return;
+    }
+    const discordChannelId = pair.discordChannelId;
+
+    const channel = await this.fetchDiscordTextChannel(discordChannelId);
+    await channel?.sendTyping?.();
+  }
+
+  private shouldBridgeDiscordMessage(message: Message): boolean {
+    if (
+      this.config.allowedDiscordChannelIds.size > 0 &&
+      !this.config.allowedDiscordChannelIds.has(message.channelId)
+    ) {
+      return false;
+    }
+
+    if (this.config.blockedDiscordUserIds.has(message.author.id)) {
+      return false;
+    }
+
+    if (message.author.id === this.discord.user?.id) {
+      return false;
+    }
+
+    return this.config.bridgeBotMessages || !message.author.bot;
+  }
+
+  private routeAllowsDiscordToQq(discordChannelId: string): boolean {
+    const pair = this.config.discordChannelToBridgePair.get(discordChannelId);
+    return pair !== undefined && pair.direction !== "qq-to-discord";
+  }
+
+  private routeAllowsQqToDiscord(qqGroupId: string): boolean {
+    const pair = this.config.qqGroupToBridgePair.get(qqGroupId);
+    return pair !== undefined && pair.direction !== "discord-to-qq";
+  }
+
+  private async sendQqSystemMessage(qqGroupId: string, content: string): Promise<void> {
+    const segments: CqSegment[] = [{ type: "text", data: { text: content } }];
+    await this.sendQqSegments(qqGroupId, segments);
+  }
+
+  private async sendQqSegments(
+    qqGroupId: string,
+    segments: CqSegment[]
+  ): Promise<OneBotSendMessageData[]> {
+    const results: OneBotSendMessageData[] = [];
+    for (const chunk of chunkQqSegments(segments, this.config.qqMaxTextSegmentLength)) {
+      const messageSegments = chunk.filter((segment) => segment.type !== "file");
+      const fileSegments = chunk.filter((segment) => segment.type === "file");
+
+      if (messageSegments.length > 0) {
+        results.push(await this.oneBot.sendGroupMessage(qqGroupId, messageSegments));
+      }
+
+      for (const fileSegment of fileSegments) {
+        const fallbackResult = await this.sendQqFileSegment(qqGroupId, fileSegment);
+        if (fallbackResult) {
+          results.push(fallbackResult);
+        }
       }
     }
 
-    return segments;
+    return results;
+  }
+
+  private async sendQqFileSegment(
+    qqGroupId: string,
+    segment: CqSegment
+  ): Promise<OneBotSendMessageData | undefined> {
+    const file = firstString(segment.data.file, segment.data.url, segment.data.path);
+    const name = sanitizeFileName(firstString(segment.data.name, segment.data.file_name) ?? inferFileName(file));
+    if (!file) {
+      return this.oneBot.sendGroupMessage(qqGroupId, [
+        { type: "text", data: { text: "[Discord file]" } }
+      ]);
+    }
+
+    if (this.config.uploadQqFiles) {
+      try {
+        await this.oneBot.uploadGroupFile(qqGroupId, file, name);
+        return undefined;
+      } catch (error) {
+        this.logger.warn("Failed to upload QQ group file, falling back to link text", {
+          qqGroupId,
+          name,
+          error
+        });
+      }
+    }
+
+    return this.oneBot.sendGroupMessage(qqGroupId, [
+      { type: "text", data: { text: `[Discord file${name ? ` ${name}` : ""}: ${file}]` } }
+    ]);
+  }
+
+  private async sendDiscordSystemMessage(discordChannelId: string, content: string): Promise<void> {
+    const channel = await this.fetchDiscordTextChannel(discordChannelId);
+    if (!channel) {
+      return;
+    }
+
+    await this.sendDiscordMessage(channel, content, [], { users: [], roles: [], parse: [] });
   }
 
   private async fetchDiscordTextChannel(channelId: string): Promise<SendableTextChannel | undefined> {
@@ -197,28 +827,196 @@ export class QDiscordBridge {
       return undefined;
     }
 
-    return channel;
+    return channel as SendableTextChannel;
+  }
+
+  private async resolveFullMessage(message: Message | PartialMessage): Promise<Message | undefined> {
+    if (!message.partial) {
+      return message as Message;
+    }
+
+    try {
+      return await message.fetch();
+    } catch (error) {
+      this.logger.warn("Failed to fetch partial Discord message", { messageId: message.id, error });
+      return undefined;
+    }
   }
 
   private async sendDiscordMessage(
     channel: SendableTextChannel,
     content: string,
     files: string[],
-    allowedMentions: { users: string[]; roles: string[]; parse: Array<"everyone"> }
-  ): Promise<void> {
-    if (files.length === 0) {
-      await channel.send({ content, allowedMentions });
+    allowedMentions: { users: string[]; roles: string[]; parse: Array<"everyone"> },
+    replyToDiscordMessageId?: string
+  ): Promise<Message[]> {
+    const sent: Message[] = [];
+    const contentChunks = splitDiscordContent(content, this.config.discordMaxContentLength);
+    const fileBatches = chunk(files, 10);
+    const firstOptions: MessageCreateOptions | undefined =
+      contentChunks[0] || fileBatches[0]
+        ? {
+            content: contentChunks[0],
+            files: fileBatches[0],
+            allowedMentions,
+            reply: replyToDiscordMessageId
+              ? { messageReference: replyToDiscordMessageId, failIfNotExists: false }
+              : undefined
+          }
+        : undefined;
+
+    if (firstOptions) {
+      sent.push(
+        ...(await this.sendDiscordMessageOptions(channel, firstOptions, fileBatches[0] ?? []))
+      );
+    }
+
+    for (const chunkContent of contentChunks.slice(1)) {
+      sent.push(await channel.send({ content: chunkContent, allowedMentions }));
+    }
+
+    for (const batch of fileBatches.slice(firstOptions?.files ? 1 : 0)) {
+      sent.push(
+        ...(await this.sendDiscordMessageOptions(channel, { files: batch, allowedMentions }, batch))
+      );
+    }
+
+    return sent;
+  }
+
+  private async sendDiscordMessageOptions(
+    channel: SendableTextChannel,
+    options: MessageCreateOptions,
+    fallbackFiles: string[]
+  ): Promise<Message[]> {
+    try {
+      return [await channel.send(options)];
+    } catch (error) {
+      if (fallbackFiles.length === 0) {
+        throw error;
+      }
+
+      this.logger.warn("Failed to send Discord attachments, falling back to file links", {
+        channelId: channel.id,
+        fileCount: fallbackFiles.length,
+        error
+      });
+      const fallbackContent = [
+        options.content,
+        ...fallbackFiles.map((file) => `[file] ${file}`)
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const sent: Message[] = [];
+      const chunks = splitDiscordContent(fallbackContent, this.config.discordMaxContentLength);
+      for (const [index, chunkContent] of chunks.entries()) {
+        sent.push(
+          await channel.send({
+            content: chunkContent,
+            allowedMentions: options.allowedMentions,
+            reply: index === 0 ? options.reply : undefined
+          })
+        );
+      }
+
+      return sent;
+    }
+  }
+
+  private async deleteQqMessage(qqMessageId: string): Promise<void> {
+    try {
+      await this.oneBot.deleteMessage(qqMessageId);
+    } catch (error) {
+      this.logger.warn("Failed to delete QQ message", { qqMessageId, error });
+    }
+  }
+
+  private async deleteDiscordMessage(channelId: string, messageId: string): Promise<void> {
+    try {
+      const channel = await this.discord.channels.fetch(channelId as Snowflake);
+      const messageManager = (channel as { messages?: { fetch(id: string): Promise<Message> } } | null)
+        ?.messages;
+      const message = await messageManager?.fetch(messageId);
+      await message?.delete();
+    } catch (error) {
+      this.logger.warn("Failed to delete Discord message", { channelId, messageId, error });
+    }
+  }
+
+  private rememberMessageLink(link: MessageLink): void {
+    this.pruneMessageLinks();
+    this.forgetByDiscordMessageId(link.discordMessageId);
+    this.forgetByQqMessageId(link.qqMessageId);
+    this.discordLinks.set(link.discordMessageId, link);
+    this.qqLinks.set(link.qqMessageId, link);
+    this.pruneMessageLinks();
+  }
+
+  private getLinkByDiscordMessageId(discordMessageId: string): MessageLink | undefined {
+    this.pruneMessageLinks();
+    return this.discordLinks.get(discordMessageId);
+  }
+
+  private getLinkByQqMessageId(qqMessageId: string): MessageLink | undefined {
+    this.pruneMessageLinks();
+    return this.qqLinks.get(qqMessageId);
+  }
+
+  private forgetByDiscordMessageId(discordMessageId: string): void {
+    const link = this.discordLinks.get(discordMessageId);
+    if (!link) {
       return;
     }
 
-    const batches = chunk(files, 10);
-    for (const [index, batch] of batches.entries()) {
-      await channel.send({
-        content: index === 0 && content ? content : undefined,
-        files: batch,
-        allowedMentions
-      });
+    this.discordLinks.delete(link.discordMessageId);
+    this.qqLinks.delete(link.qqMessageId);
+  }
+
+  private forgetByQqMessageId(qqMessageId: string): void {
+    const link = this.qqLinks.get(qqMessageId);
+    if (!link) {
+      return;
     }
+
+    this.discordLinks.delete(link.discordMessageId);
+    this.qqLinks.delete(link.qqMessageId);
+  }
+
+  private pruneMessageLinks(): void {
+    const expiresBefore = Date.now() - this.config.messageLinkTtlMs;
+    for (const link of this.discordLinks.values()) {
+      if (link.createdAt < expiresBefore) {
+        this.forgetByDiscordMessageId(link.discordMessageId);
+      }
+    }
+
+    while (this.discordLinks.size > this.config.messageLinkMaxEntries) {
+      const oldest = this.discordLinks.values().next().value as MessageLink | undefined;
+      if (!oldest) {
+        return;
+      }
+      this.forgetByDiscordMessageId(oldest.discordMessageId);
+    }
+  }
+
+  private enqueueDiscordToQq(label: string, task: () => Promise<void>): void {
+    if (this.stopping) {
+      return;
+    }
+
+    void this.discordToQqQueue.add(label, task).catch((error) => {
+      this.logger.error("Discord to QQ task failed", { label, error });
+    });
+  }
+
+  private enqueueQqToDiscord(label: string, task: () => Promise<void>): void {
+    if (this.stopping) {
+      return;
+    }
+
+    void this.qqToDiscordQueue.add(label, task).catch((error) => {
+      this.logger.error("QQ to Discord task failed", { label, error });
+    });
   }
 }
 
@@ -230,6 +1028,156 @@ function getQqSenderName(event: OneBotMessageEvent): string {
   const card = event.sender?.card?.trim();
   const nickname = event.sender?.nickname?.trim();
   return card || nickname || `QQ ${event.user_id ?? "unknown"}`;
+}
+
+async function upsertStatusCommand(
+  manager: unknown,
+  commandData: StatusCommandData
+): Promise<void> {
+  const commandManager = manager as CommandManagerLike;
+  const commands = await commandManager.fetch();
+  const existing = commands.find((command) => command.name === commandData.name);
+  if (existing) {
+    await commandManager.edit(existing.id, commandData);
+    return;
+  }
+
+  await commandManager.create(commandData);
+}
+
+function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
+  const queueLines = Object.entries(status.queues)
+    .map(
+      ([name, stats]) =>
+        `${name}: pending ${stats.pending}, running ${stats.running}, failed ${stats.failed}`
+    )
+    .join("\n");
+
+  return [
+    `Discord: ${status.discord.ready ? "ready" : "not ready"} (${status.discord.userTag ?? "unknown"})`,
+    `QQ: ${status.oneBot.connected ? "connected" : status.oneBot.connecting ? "connecting" : "disconnected"} (${status.oneBot.selfQQId ?? "unknown"})`,
+    `Bridge pairs: ${status.bridgePairs}`,
+    `Tracked links: ${status.messageLinks.tracked}/${status.messageLinks.maxEntries}`,
+    `Uptime: ${status.uptimeSeconds}s`,
+    queueLines
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatDiscordReactionEmoji(reaction: MessageReaction): string {
+  if (reaction.emoji.id) {
+    return `<${reaction.emoji.animated ? "a" : ""}:${reaction.emoji.name ?? "emoji"}:${reaction.emoji.id}>`;
+  }
+
+  return reaction.emoji.name ?? "emoji";
+}
+
+function extractOneBotReaction(
+  event: OneBotNoticeEvent
+): { action: "added" | "removed"; emojiId?: string; userId?: string } | undefined {
+  const noticeType = event.notice_type.toLowerCase();
+  if (!noticeType.includes("reaction") && !noticeType.includes("emoji")) {
+    return undefined;
+  }
+
+  const emojiId = firstString(
+    event.emoji_id,
+    event.emojiId,
+    event.face_id,
+    event.faceId,
+    event.id
+  );
+  const subType = firstString(event.sub_type, event.action, event.operator_type)?.toLowerCase() ?? "";
+  const action = /remove|delete|unset|unlike|cancel/.test(subType) ? "removed" : "added";
+
+  return {
+    action,
+    emojiId,
+    userId: event.user_id !== undefined ? String(event.user_id) : undefined
+  };
+}
+
+function isOneBotTypingNotice(event: OneBotNoticeEvent): boolean {
+  const noticeType = event.notice_type.toLowerCase();
+  const subType = firstString(event.sub_type, event.action, event.status)?.toLowerCase() ?? "";
+  return (
+    noticeType.includes("typing") ||
+    noticeType.includes("input") ||
+    subType.includes("typing") ||
+    subType.includes("input")
+  );
+}
+
+function formatOneBotGroupUpload(event: OneBotNoticeEvent): string {
+  const file =
+    event.file && typeof event.file === "object"
+      ? (event.file as Record<string, unknown>)
+      : {};
+  const name = firstString(file.name, file.file_name, file.id, event.file_id) ?? "unknown file";
+  const size = firstString(file.size, event.file_size);
+  const uploader = event.user_id ?? "unknown";
+  const details = size ? `${name} (${formatBytes(size)})` : name;
+  return `[QQ file upload] User ${uploader} uploaded ${details}`;
+}
+
+function formatBytes(value: string): string {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return value;
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = bytes / 1024;
+  for (const unit of units) {
+    if (amount < 1024) {
+      return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${unit}`;
+    }
+    amount /= 1024;
+  }
+
+  return `${amount.toFixed(0)} PB`;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value);
+    }
+  }
+
+  return undefined;
+}
+
+function inferFileName(file: string | undefined): string | undefined {
+  if (!file) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(file);
+    const name = parsed.pathname.split("/").filter(Boolean).at(-1);
+    return name ? decodeURIComponent(name) : undefined;
+  } catch {
+    return file.split("/").filter(Boolean).at(-1);
+  }
+}
+
+function sanitizeFileName(name: string | undefined): string | undefined {
+  if (!name) {
+    return undefined;
+  }
+
+  const sanitized = name
+    .replace(/[/\\]/g, "_")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 120);
+  return sanitized || undefined;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

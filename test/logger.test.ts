@@ -1,0 +1,48 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createLogger } from "../src/logger.js";
+
+describe("logger", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("redacts secret-looking context keys", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logger = createLogger("debug");
+
+    logger.info("test", {
+      discordToken: "secret",
+      nested: { access_token: "napcat-secret" },
+      visible: "value"
+    });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(String(logSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+
+    expect(payload.discordToken).toBe("[redacted]");
+    expect(payload.nested).toEqual({ access_token: "[redacted]" });
+    expect(payload.visible).toBe("value");
+  });
+
+  it("redacts token-like substrings in messages and errors", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logger = createLogger("debug");
+
+    logger.error("failed bearer abc123", {
+      url: "ws://127.0.0.1:3001/?access_token=napcat-token&x=1",
+      error: new Error("Authorization: Bearer discord-token")
+    });
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(String(errorSpy.mock.calls[0]?.[0])) as {
+      message: string;
+      url: string;
+      error: { message: string };
+    };
+
+    expect(payload.message).toBe("failed bearer [redacted]");
+    expect(payload.url).toBe("ws://127.0.0.1:3001/?access_token=[redacted]&x=1");
+    expect(payload.error.message).toBe("Authorization: Bearer [redacted]");
+  });
+});

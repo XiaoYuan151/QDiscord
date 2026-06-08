@@ -1,7 +1,10 @@
 export interface BridgePair {
   discordChannelId: string;
   qqGroupId: string;
+  direction: BridgeDirection;
 }
+
+export type BridgeDirection = "both" | "discord-to-qq" | "qq-to-discord";
 
 export interface AppConfig {
   discordToken: string;
@@ -10,6 +13,8 @@ export interface AppConfig {
   bridgePairs: BridgePair[];
   discordChannelToQqGroup: Map<string, string>;
   qqGroupToDiscordChannel: Map<string, string>;
+  discordChannelToBridgePair: Map<string, BridgePair>;
+  qqGroupToBridgePair: Map<string, BridgePair>;
   qqToDiscordUserMap: Map<string, string>;
   discordToQqUserMap: Map<string, string>;
   cqFaceEmojiMap: Map<string, string>;
@@ -17,8 +22,36 @@ export interface AppConfig {
   showSenderName: boolean;
   bridgeBotMessages: boolean;
   allowEveryoneMentions: boolean;
-  napcatReconnectMs: number;
+  bridgeMemberEvents: boolean;
+  bridgeTypingIndicators: boolean;
+  uploadQqFiles: boolean;
+  statusCommandEnabled: boolean;
+  statusCommandName: string;
+  statusCommandGuildIds: Set<string>;
+  discordMaxContentLength: number;
+  qqMaxTextSegmentLength: number;
+  napcatReconnectInitialMs: number;
+  napcatReconnectMaxMs: number;
+  napcatHeartbeatIntervalMs: number;
+  napcatHeartbeatTimeoutMs: number;
+  oneBotActionTimeoutMs: number;
+  queueConcurrency: number;
+  queueMinDelayMs: number;
+  queueMaxRetries: number;
+  queueRetryBaseDelayMs: number;
+  shutdownDrainTimeoutMs: number;
+  messageLinkTtlMs: number;
+  messageLinkMaxEntries: number;
+  healthEnabled: boolean;
+  healthHost: string;
+  healthPort: number;
+  logLevel: LogLevel;
+  allowedDiscordChannelIds: Set<string>;
+  blockedDiscordUserIds: Set<string>;
+  blockedQqUserIds: Set<string>;
 }
+
+export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
 export interface CqSegment {
   type: string;
@@ -38,6 +71,7 @@ export interface OneBotMessageEvent {
   sub_type?: string;
   group_id?: number | string;
   user_id?: number | string;
+  message_id?: number | string;
   message?: OneBotMessagePayload;
   raw_message?: string;
   sender?: {
@@ -48,4 +82,56 @@ export interface OneBotMessageEvent {
     title?: string;
   };
   [key: string]: unknown;
+}
+
+export interface OneBotNoticeEvent {
+  post_type: "notice";
+  notice_type: string;
+  sub_type?: string;
+  group_id?: number | string;
+  user_id?: number | string;
+  operator_id?: number | string;
+  message_id?: number | string;
+  [key: string]: unknown;
+}
+
+export interface OneBotSendMessageData {
+  message_id?: number | string;
+}
+
+export interface BridgeRuntimeStatus {
+  startedAt: string;
+  uptimeSeconds: number;
+  discord: {
+    ready: boolean;
+    userTag?: string;
+    guildCount: number;
+    pingMs: number;
+  };
+  oneBot: {
+    connected: boolean;
+    connecting: boolean;
+    selfQQId?: string;
+    reconnectAttempts: number;
+  };
+  queues: Record<
+    string,
+    {
+      pending: number;
+      running: number;
+      completed: number;
+      failed: number;
+    }
+  >;
+  bridgePairs: number;
+  messageLinks: {
+    tracked: number;
+    maxEntries: number;
+    ttlMs: number;
+  };
+  routes: Array<{
+    discordChannelId: string;
+    qqGroupId: string;
+    direction: BridgeDirection;
+  }>;
 }

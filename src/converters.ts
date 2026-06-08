@@ -11,6 +11,7 @@ export interface QqToDiscordResult {
   files: string[];
   mentionUserIds: string[];
   mentionEveryone: boolean;
+  replyToMessageId?: string;
 }
 
 export interface DiscordTextToQqOptions {
@@ -27,6 +28,46 @@ export interface DiscordAttachmentLike {
   contentType?: string | null;
 }
 
+export interface DiscordStickerLike {
+  name: string;
+  url?: string | null;
+}
+
+export interface DiscordEmbedLike {
+  title?: string | null;
+  description?: string | null;
+  url?: string | null;
+  author?: { name?: string | null; url?: string | null } | null;
+  fields?: Array<{ name: string; value: string; inline?: boolean }> | null;
+  image?: { url?: string | null } | null;
+  thumbnail?: { url?: string | null } | null;
+  video?: { url?: string | null } | null;
+  footer?: { text?: string | null } | null;
+}
+
+export interface DiscordMessageToQqInput {
+  content: string;
+  senderLabel?: string;
+  replyToQqMessageId?: string;
+  replyFallbackText?: string;
+  attachments?: Iterable<DiscordAttachmentLike>;
+  stickers?: Iterable<DiscordStickerLike>;
+  embeds?: Iterable<DiscordEmbedLike>;
+}
+
+export interface DiscordReactionToQqInput {
+  action: "added" | "removed";
+  emojiText: string;
+  userLabel?: string;
+  replyToQqMessageId?: string;
+}
+
+export interface QqReactionToDiscordInput {
+  action: "added" | "removed";
+  emojiId?: string;
+  userId?: string;
+}
+
 export function qqSegmentsToDiscord(
   segments: CqSegment[],
   options: QqToDiscordOptions
@@ -35,6 +76,7 @@ export function qqSegmentsToDiscord(
   const files: string[] = [];
   const mentionUserIds: string[] = [];
   let mentionEveryone = false;
+  let replyToMessageId: string | undefined;
 
   for (const segment of segments) {
     switch (segment.type) {
@@ -66,21 +108,58 @@ export function qqSegmentsToDiscord(
       }
       case "image":
       case "mface": {
-        const url = firstValue(segment.data.url, segment.data.file, segment.data.path);
-        if (url && isHttpUrl(url)) {
-          files.push(url);
-        } else {
-          parts.push(url ? `[QQ image: ${url}]` : "[QQ image]");
-        }
+        appendOneBotMedia(segment, files, parts, "image");
         break;
       }
-      case "record":
       case "video": {
-        const url = firstValue(segment.data.url, segment.data.file, segment.data.path);
-        parts.push(url ? `[QQ ${segment.type}: ${url}]` : `[QQ ${segment.type}]`);
+        appendOneBotMedia(segment, files, parts, "video");
+        break;
+      }
+      case "record": {
+        appendOneBotMedia(segment, files, parts, "voice");
+        break;
+      }
+      case "file": {
+        appendOneBotMedia(segment, files, parts, "file");
         break;
       }
       case "reply": {
+        replyToMessageId = segment.data.id ?? segment.data.message_id ?? replyToMessageId;
+        break;
+      }
+      case "share": {
+        const title = firstValue(segment.data.title, segment.data.content) ?? "share";
+        const url = firstValue(segment.data.url);
+        parts.push(url ? `[QQ share: ${title} ${url}]` : `[QQ share: ${title}]`);
+        break;
+      }
+      case "location": {
+        const title = firstValue(segment.data.title, segment.data.content);
+        const lat = firstValue(segment.data.lat, segment.data.latitude);
+        const lon = firstValue(segment.data.lon, segment.data.lng, segment.data.longitude);
+        parts.push(`[QQ location${title ? `: ${title}` : ""}${lat && lon ? ` (${lat}, ${lon})` : ""}]`);
+        break;
+      }
+      case "music": {
+        const title = firstValue(segment.data.title, segment.data.content) ?? "music";
+        const url = firstValue(segment.data.url, segment.data.jumpUrl);
+        parts.push(url ? `[QQ music: ${title} ${url}]` : `[QQ music: ${title}]`);
+        break;
+      }
+      case "json":
+      case "xml": {
+        parts.push(`[QQ ${segment.type}: ${truncateInline(firstValue(segment.data.data, segment.data.content) ?? "")}]`);
+        break;
+      }
+      case "forward":
+      case "node": {
+        parts.push(`[QQ forwarded message${segment.data.id ? ` ${segment.data.id}` : ""}]`);
+        break;
+      }
+      case "dice":
+      case "rps":
+      case "poke": {
+        parts.push(`[QQ ${segment.type}]`);
         break;
       }
       default: {
@@ -93,19 +172,73 @@ export function qqSegmentsToDiscord(
     content: normalizeWhitespace(parts.join("")),
     files,
     mentionUserIds: [...new Set(mentionUserIds)],
-    mentionEveryone
+    mentionEveryone,
+    replyToMessageId
   };
+}
+
+export function discordMessageToQqSegments(
+  input: DiscordMessageToQqInput,
+  options: DiscordTextToQqOptions
+): CqSegment[] {
+  const segments: CqSegment[] = [];
+
+  if (input.replyToQqMessageId) {
+    segments.push({ type: "reply", data: { id: input.replyToQqMessageId } });
+  } else if (input.replyFallbackText) {
+    appendTextSegment(segments, `${input.replyFallbackText}\n`);
+  }
+
+  if (input.senderLabel) {
+    appendTextSegment(segments, `${input.senderLabel}: `);
+  }
+
+  appendSegments(segments, discordTextToQqSegments(input.content, options));
+  appendDiscordAttachmentsToQqSegments(segments, input.attachments ?? []);
+  appendDiscordStickersToQqSegments(segments, input.stickers ?? []);
+  appendDiscordEmbedsToQqSegments(segments, input.embeds ?? []);
+
+  return segments;
+}
+
+export function discordReactionToQqSegments(
+  input: DiscordReactionToQqInput,
+  options: DiscordTextToQqOptions
+): CqSegment[] {
+  const segments: CqSegment[] = [];
+  if (input.replyToQqMessageId) {
+    segments.push({ type: "reply", data: { id: input.replyToQqMessageId } });
+  }
+
+  appendTextSegment(
+    segments,
+    `[Discord reaction] ${input.userLabel ?? "A Discord user"} ${input.action} `
+  );
+  appendSegments(segments, discordTextToQqSegments(input.emojiText, options));
+  return segments;
+}
+
+export function qqReactionToDiscordContent(
+  input: QqReactionToDiscordInput,
+  options: QqToDiscordOptions
+): string {
+  const emoji =
+    input.emojiId && options.cqFaceEmojiMap.has(input.emojiId)
+      ? options.cqFaceEmojiMap.get(input.emojiId)
+      : `[QQ face ${input.emojiId ?? "unknown"}]`;
+  return `[QQ reaction] User ${input.userId ?? "unknown"} ${input.action} ${emoji}`;
 }
 
 export function discordTextToQqSegments(text: string, options: DiscordTextToQqOptions): CqSegment[] {
   const segments: CqSegment[] = [];
   const tokenPattern = /<(a?):([A-Za-z0-9_~]+):(\d+)>|<@!?(\d+)>|<@&(\d+)>|<#(\d+)>/g;
+  const emojiKeys = configuredUnicodeEmojiKeys(options.discordEmojiToCqFaceMap);
   let cursor = 0;
 
   for (const match of text.matchAll(tokenPattern)) {
     const matchIndex = match.index ?? 0;
     if (matchIndex > cursor) {
-      appendTextSegment(segments, text.slice(cursor, matchIndex));
+      appendTextWithEmojiMapping(segments, text.slice(cursor, matchIndex), emojiKeys, options.discordEmojiToCqFaceMap);
     }
 
     if (match[3]) {
@@ -141,7 +274,7 @@ export function discordTextToQqSegments(text: string, options: DiscordTextToQqOp
   }
 
   if (cursor < text.length) {
-    appendTextSegment(segments, text.slice(cursor));
+    appendTextWithEmojiMapping(segments, text.slice(cursor), emojiKeys, options.discordEmojiToCqFaceMap);
   }
 
   return segments;
@@ -157,13 +290,76 @@ export function appendDiscordAttachmentsToQqSegments(
       continue;
     }
 
+    if (attachment.contentType?.startsWith("audio/") || isLikelyAudioUrl(attachment.url)) {
+      segments.push({ type: "record", data: { file: attachment.url } });
+      continue;
+    }
+
     if (attachment.contentType?.startsWith("video/")) {
       segments.push({ type: "video", data: { file: attachment.url } });
       continue;
     }
 
-    const label = attachment.name ? `attachment ${attachment.name}` : "attachment";
-    appendTextSegment(segments, ` [${label}: ${attachment.url}]`);
+    segments.push({
+      type: "file",
+      data: {
+        file: attachment.url,
+        ...(attachment.name ? { name: sanitizeFileName(attachment.name) } : {})
+      }
+    });
+  }
+}
+
+export function appendDiscordStickersToQqSegments(
+  segments: CqSegment[],
+  stickers: Iterable<DiscordStickerLike>
+): void {
+  for (const sticker of stickers) {
+    if (sticker.url) {
+      segments.push({ type: "image", data: { file: sticker.url } });
+    } else {
+      appendTextSegment(segments, ` [sticker: ${sticker.name}]`);
+    }
+  }
+}
+
+export function appendDiscordEmbedsToQqSegments(
+  segments: CqSegment[],
+  embeds: Iterable<DiscordEmbedLike>
+): void {
+  for (const embed of embeds) {
+    const lines: string[] = [];
+    if (embed.author?.name) {
+      lines.push(`Author: ${embed.author.name}`);
+    }
+    if (embed.title) {
+      lines.push(embed.url ? `${embed.title} (${embed.url})` : embed.title);
+    } else if (embed.url) {
+      lines.push(embed.url);
+    }
+    if (embed.description) {
+      lines.push(embed.description);
+    }
+    for (const field of embed.fields ?? []) {
+      lines.push(`${field.name}: ${field.value}`);
+    }
+    if (embed.footer?.text) {
+      lines.push(embed.footer.text);
+    }
+
+    if (lines.length > 0) {
+      appendTextSegment(segments, `\n[Embed]\n${lines.join("\n")}`);
+    }
+
+    for (const url of [
+      embed.image?.url,
+      embed.thumbnail?.url,
+      embed.video?.url
+    ]) {
+      if (url) {
+        segments.push({ type: isLikelyVideoUrl(url) ? "video" : "image", data: { file: url } });
+      }
+    }
   }
 }
 
@@ -172,11 +368,66 @@ export function escapeDiscordMarkdown(text: string): string {
 }
 
 export function truncateDiscordContent(content: string, maxLength = 1900): string {
-  if (content.length <= maxLength) {
-    return content;
+  return splitDiscordContent(content, maxLength)[0] ?? "";
+}
+
+export function splitDiscordContent(content: string, maxLength = 1900): string[] {
+  if (!content) {
+    return [];
   }
 
-  return `${content.slice(0, maxLength - 16)}... [truncated]`;
+  if (content.length <= maxLength) {
+    return [content];
+  }
+
+  const chunks = splitText(content, Math.max(1, maxLength - 18));
+  return chunks.map((chunk, index) => `${chunk}\n[part ${index + 1}/${chunks.length}]`);
+}
+
+export function chunkQqSegments(segments: CqSegment[], maxTextLength = 3500): CqSegment[][] {
+  const chunks: CqSegment[][] = [];
+  let current: CqSegment[] = [];
+  let currentTextLength = 0;
+
+  const flush = () => {
+    if (current.length > 0) {
+      chunks.push(current);
+      current = [];
+      currentTextLength = 0;
+    }
+  };
+
+  for (const segment of segments) {
+    if (segment.type !== "text") {
+      current.push(segment);
+      continue;
+    }
+
+    const text = segment.data.text ?? "";
+    for (const textChunk of splitText(text, maxTextLength)) {
+      if (currentTextLength > 0 && currentTextLength + textChunk.length > maxTextLength) {
+        flush();
+      }
+      appendTextSegment(current, textChunk);
+      currentTextLength += textChunk.length;
+      if (currentTextLength >= maxTextLength) {
+        flush();
+      }
+    }
+  }
+
+  flush();
+  return chunks;
+}
+
+function appendSegments(target: CqSegment[], source: CqSegment[]): void {
+  for (const segment of source) {
+    if (segment.type === "text") {
+      appendTextSegment(target, segment.data.text ?? "");
+    } else {
+      target.push(segment);
+    }
+  }
 }
 
 function findDiscordEmojiFaceId(
@@ -192,12 +443,68 @@ function discordEmojiCdnUrl(emojiId: string, animated: boolean): string {
   return `https://cdn.discordapp.com/emojis/${emojiId}.${extension}?size=64&quality=lossless`;
 }
 
+function appendOneBotMedia(
+  segment: CqSegment,
+  files: string[],
+  parts: string[],
+  label: string
+): void {
+  const url = firstValue(segment.data.url, segment.data.file, segment.data.path);
+  if (url && isHttpUrl(url)) {
+    files.push(url);
+  } else {
+    parts.push(url ? `[QQ ${label}: ${url}]` : `[QQ ${label}]`);
+  }
+}
+
+function appendTextWithEmojiMapping(
+  segments: CqSegment[],
+  text: string,
+  emojiKeys: string[],
+  map: Map<string, string>
+): void {
+  if (emojiKeys.length === 0) {
+    appendTextSegment(segments, text);
+    return;
+  }
+
+  let cursor = 0;
+  while (cursor < text.length) {
+    const key = emojiKeys.find((candidate) => text.startsWith(candidate, cursor));
+    if (!key) {
+      appendTextSegment(segments, text[cursor] ?? "");
+      cursor += 1;
+      continue;
+    }
+
+    const faceId = map.get(key);
+    if (faceId) {
+      segments.push({ type: "face", data: { id: faceId } });
+    }
+    cursor += key.length;
+  }
+}
+
+function configuredUnicodeEmojiKeys(map: Map<string, string>): string[] {
+  return [...map.keys()]
+    .filter((key) => /\p{Extended_Pictographic}/u.test(key))
+    .sort((left, right) => right.length - left.length);
+}
+
 function isImageAttachment(attachment: DiscordAttachmentLike): boolean {
   if (attachment.contentType?.startsWith("image/")) {
     return true;
   }
 
   return isLikelyImageUrl(attachment.url);
+}
+
+function isLikelyAudioUrl(url: string): boolean {
+  return /\.(mp3|m4a|wav|ogg|oga|opus|flac|aac)(?:$|[?#])/i.test(url);
+}
+
+function isLikelyVideoUrl(url: string): boolean {
+  return /\.(mp4|mov|m4v|webm|mkv)(?:$|[?#])/i.test(url);
 }
 
 function isLikelyImageUrl(url: string): boolean {
@@ -215,6 +522,44 @@ function isHttpUrl(value: string): boolean {
 
 function firstValue(...values: Array<string | undefined>): string | undefined {
   return values.find((value) => value !== undefined && value.trim() !== "");
+}
+
+function splitText(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLength) {
+    const slice = remaining.slice(0, maxLength + 1);
+    const breakpoint = Math.max(slice.lastIndexOf("\n"), slice.lastIndexOf(" "));
+    const chunkLength = breakpoint > Math.floor(maxLength * 0.6) ? breakpoint : maxLength;
+    chunks.push(remaining.slice(0, chunkLength).trimEnd());
+    remaining = remaining.slice(chunkLength).trimStart();
+  }
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
+function truncateInline(text: string, maxLength = 160): string {
+  if (!text) {
+    return "payload omitted";
+  }
+
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`;
+}
+
+function sanitizeFileName(name: string): string {
+  const sanitized = name
+    .replace(/[/\\]/g, "_")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 120);
+  return sanitized || "attachment";
 }
 
 function normalizeWhitespace(text: string): string {
