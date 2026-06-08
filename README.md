@@ -100,6 +100,12 @@ MESSAGE_LINK_TTL_MS=86400000
 MESSAGE_LINK_MAX_ENTRIES=10000
 ```
 
+Set `MESSAGE_LINK_STORE_PATH` to persist reply/delete mappings across restarts:
+
+```bash
+MESSAGE_LINK_STORE_PATH=.qdiscord-links.json
+```
+
 NapCat reconnects use bounded exponential backoff:
 
 ```bash

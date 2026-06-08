@@ -53,6 +53,7 @@ describe("config", () => {
       SHUTDOWN_DRAIN_TIMEOUT_MS: "0",
       MESSAGE_LINK_TTL_MS: "5000",
       MESSAGE_LINK_MAX_ENTRIES: "100",
+      MESSAGE_LINK_STORE_PATH: ".links.json",
       HEALTH_PORT: "0"
     });
 
@@ -74,6 +75,7 @@ describe("config", () => {
     expect(config.shutdownDrainTimeoutMs).toBe(0);
     expect(config.messageLinkTtlMs).toBe(5000);
     expect(config.messageLinkMaxEntries).toBe(100);
+    expect(config.messageLinkStorePath).toBe(".links.json");
     expect(config.healthPort).toBe(0);
     expect(config.discordChannelToBridgePair.get("111")?.direction).toBe("discord-to-qq");
     expect(config.qqGroupToBridgePair.get("222")?.direction).toBe("discord-to-qq");

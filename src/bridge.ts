@@ -31,6 +31,7 @@ import {
   qqSegmentsToDiscord,
   splitDiscordContent
 } from "./converters.js";
+import { MessageLinkStore } from "./linkstore.js";
 import { createLogger, type Logger } from "./logger.js";
 import { OneBotClient } from "./onebot.js";
 import { AsyncTaskQueue } from "./queue.js";
@@ -77,6 +78,7 @@ export class QDiscordBridge {
   private readonly discordLinks = new Map<string, MessageLink>();
   private readonly qqLinks = new Map<string, MessageLink>();
   private readonly startedAt = new Date();
+  private readonly linkStore?: MessageLinkStore;
   private stopping = false;
 
   constructor(
@@ -124,6 +126,11 @@ export class QDiscordBridge {
       maxRetries: config.queueMaxRetries,
       retryBaseDelayMs: config.queueRetryBaseDelayMs
     });
+
+    if (config.messageLinkStorePath) {
+      this.linkStore = new MessageLinkStore(config.messageLinkStorePath);
+      this.loadStoredMessageLinks();
+    }
   }
 
   async start(): Promise<void> {
@@ -481,6 +488,7 @@ export class QDiscordBridge {
 
       await this.deleteQqMessage(existing.qqMessageId);
       this.forgetByDiscordMessageId(message.id);
+      this.persistMessageLinks();
     }
 
     await this.handleDiscordMessage(message, { edited: true });
@@ -498,6 +506,7 @@ export class QDiscordBridge {
 
     await this.deleteQqMessage(existing.qqMessageId);
     this.forgetByDiscordMessageId(message.id);
+    this.persistMessageLinks();
   }
 
   private async handleDiscordMemberEvent(
@@ -644,6 +653,7 @@ export class QDiscordBridge {
 
       await this.deleteDiscordMessage(link.discordChannelId, link.discordMessageId);
       this.forgetByQqMessageId(link.qqMessageId);
+      this.persistMessageLinks();
       return;
     }
 
@@ -950,6 +960,7 @@ export class QDiscordBridge {
     this.discordLinks.set(link.discordMessageId, link);
     this.qqLinks.set(link.qqMessageId, link);
     this.pruneMessageLinks();
+    this.persistMessageLinks();
   }
 
   private getLinkByDiscordMessageId(discordMessageId: string): MessageLink | undefined {
@@ -983,10 +994,12 @@ export class QDiscordBridge {
   }
 
   private pruneMessageLinks(): void {
+    let removed = false;
     const expiresBefore = Date.now() - this.config.messageLinkTtlMs;
     for (const link of this.discordLinks.values()) {
       if (link.createdAt < expiresBefore) {
         this.forgetByDiscordMessageId(link.discordMessageId);
+        removed = true;
       }
     }
 
@@ -996,6 +1009,47 @@ export class QDiscordBridge {
         return;
       }
       this.forgetByDiscordMessageId(oldest.discordMessageId);
+      removed = true;
+    }
+
+    if (removed) {
+      this.persistMessageLinks();
+    }
+  }
+
+  private loadStoredMessageLinks(): void {
+    if (!this.linkStore) {
+      return;
+    }
+
+    try {
+      for (const link of this.linkStore.load()) {
+        if (
+          this.config.discordChannelToBridgePair.has(link.discordChannelId) &&
+          this.config.qqGroupToBridgePair.has(link.qqGroupId)
+        ) {
+          this.discordLinks.set(link.discordMessageId, link);
+          this.qqLinks.set(link.qqMessageId, link);
+        }
+      }
+      this.pruneMessageLinks();
+      this.logger.info("Loaded persisted message links", {
+        count: this.discordLinks.size
+      });
+    } catch (error) {
+      this.logger.warn("Failed to load persisted message links", { error });
+    }
+  }
+
+  private persistMessageLinks(): void {
+    if (!this.linkStore) {
+      return;
+    }
+
+    try {
+      this.linkStore.save([...this.discordLinks.values()]);
+    } catch (error) {
+      this.logger.warn("Failed to persist message links", { error });
     }
   }
 

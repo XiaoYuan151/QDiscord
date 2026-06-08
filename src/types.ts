@@ -42,6 +42,7 @@ export interface AppConfig {
   shutdownDrainTimeoutMs: number;
   messageLinkTtlMs: number;
   messageLinkMaxEntries: number;
+  messageLinkStorePath?: string;
   healthEnabled: boolean;
   healthHost: string;
   healthPort: number;
