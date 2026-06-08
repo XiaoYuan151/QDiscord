@@ -16,6 +16,7 @@ It supports:
 - Discord polls to QQ text fallbacks with answer and vote summaries
 - QQ image, voice, video, and file segments to Discord attachments when OneBot exposes HTTP URLs
 - Basic reply, edit, delete/recall, and Discord bulk-delete synchronization
+- Discord and QQ reaction add/remove notices, including Discord reaction-clear summaries
 - Discord thread messages through bridge pairs configured on the parent channel
 - Join/leave notices, best-effort QQ typing notices, queue retries, health endpoints, and `/bridge status`
 

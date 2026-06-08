@@ -25,6 +25,7 @@ import { normalizeOneBotMessage } from "./cq.js";
 import {
   chunkQqSegments,
   discordMessageToQqSegments,
+  discordReactionClearToQqSegments,
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
   type DiscordPollLike,
@@ -259,6 +260,19 @@ export class QDiscordBridge {
     this.discord.on(Events.MessageReactionRemove, (reaction, user) => {
       this.enqueueDiscordToQq(`reaction-remove:${reaction.message.id}:${user.id}`, () =>
         this.handleDiscordReaction(reaction, user, "removed")
+      );
+    });
+
+    this.discord.on(Events.MessageReactionRemoveAll, (message, reactions) => {
+      this.enqueueDiscordToQq(`reaction-clear-all:${message.id}`, () =>
+        this.handleDiscordReactionClear(message, reactions.size)
+      );
+    });
+
+    this.discord.on(Events.MessageReactionRemoveEmoji, (reaction) => {
+      const emojiId = reaction.emoji.id ?? reaction.emoji.name ?? "emoji";
+      this.enqueueDiscordToQq(`reaction-clear-emoji:${reaction.message.id}:${emojiId}`, () =>
+        this.handleDiscordReactionEmojiClear(reaction)
       );
     });
 
@@ -638,11 +652,8 @@ export class QDiscordBridge {
     }
 
     const fullReaction = reaction.partial ? await reaction.fetch() : reaction;
-    const discordChannelId = fullReaction.message.channelId;
-    const link = this.getLinkByDiscordMessageId(fullReaction.message.id);
-    const pair = this.config.discordChannelToBridgePair.get(discordChannelId);
-    const qqGroupId = link?.qqGroupId ?? pair?.qqGroupId;
-    if (!qqGroupId || (!link && pair?.direction === "qq-to-discord")) {
+    const destination = this.resolveDiscordReactionDestination(fullReaction.message);
+    if (!destination) {
       return;
     }
 
@@ -651,7 +662,7 @@ export class QDiscordBridge {
         action,
         emojiText: formatDiscordReactionEmoji(fullReaction),
         userLabel: fullUser.globalName ?? fullUser.username,
-        replyToQqMessageId: link?.qqMessageId
+        replyToQqMessageId: destination.replyToQqMessageId
       },
       {
         discordToQqUserMap: this.config.discordToQqUserMap,
@@ -659,7 +670,57 @@ export class QDiscordBridge {
       }
     );
 
-    await this.sendQqSegments(qqGroupId, segments);
+    await this.sendQqSegments(destination.qqGroupId, segments);
+  }
+
+  private async handleDiscordReactionClear(
+    message: Message | PartialMessage,
+    reactionTypeCount: number
+  ): Promise<void> {
+    const destination = this.resolveDiscordReactionDestination(message);
+    if (!destination) {
+      return;
+    }
+
+    await this.sendQqSegments(
+      destination.qqGroupId,
+      discordReactionClearToQqSegments(
+        {
+          scope: "all",
+          reactionCount: reactionTypeCount,
+          replyToQqMessageId: destination.replyToQqMessageId
+        },
+        {
+          discordToQqUserMap: this.config.discordToQqUserMap,
+          discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap
+        }
+      )
+    );
+  }
+
+  private async handleDiscordReactionEmojiClear(
+    reaction: MessageReaction | PartialMessageReaction
+  ): Promise<void> {
+    const destination = this.resolveDiscordReactionDestination(reaction.message);
+    if (!destination) {
+      return;
+    }
+
+    await this.sendQqSegments(
+      destination.qqGroupId,
+      discordReactionClearToQqSegments(
+        {
+          scope: "emoji",
+          emojiText: formatDiscordReactionEmoji(reaction),
+          reactionCount: reaction.count,
+          replyToQqMessageId: destination.replyToQqMessageId
+        },
+        {
+          discordToQqUserMap: this.config.discordToQqUserMap,
+          discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap
+        }
+      )
+    );
   }
 
   private async handleOneBotMessage(event: OneBotMessageEvent): Promise<void> {
@@ -857,9 +918,7 @@ export class QDiscordBridge {
 
   private shouldBridgeDiscordMessage(message: Message, routeDiscordChannelId = message.channelId): boolean {
     if (
-      this.config.allowedDiscordChannelIds.size > 0 &&
-      !this.config.allowedDiscordChannelIds.has(message.channelId) &&
-      !this.config.allowedDiscordChannelIds.has(routeDiscordChannelId)
+      !this.discordRouteAllowed(message.channelId, routeDiscordChannelId)
     ) {
       return false;
     }
@@ -875,7 +934,7 @@ export class QDiscordBridge {
     return this.config.bridgeBotMessages || !message.author.bot;
   }
 
-  private resolveDiscordMessageRoute(message: Message): DiscordBridgeRoute | undefined {
+  private resolveDiscordMessageRoute(message: Message | PartialMessage): DiscordBridgeRoute | undefined {
     const thread = getDiscordThreadInfo(message);
     return resolveDiscordBridgeRoute({
       channelId: message.channelId,
@@ -888,6 +947,36 @@ export class QDiscordBridge {
   private linkAllowsDiscordToQq(link: MessageLink): boolean {
     const pair = this.config.qqGroupToBridgePair.get(link.qqGroupId);
     return pair !== undefined && pair.direction !== "qq-to-discord";
+  }
+
+  private resolveDiscordReactionDestination(
+    message: Message | PartialMessage
+  ): { qqGroupId: string; replyToQqMessageId?: string } | undefined {
+    const link = this.getLinkByDiscordMessageId(message.id);
+    if (link) {
+      return this.linkAllowsDiscordToQq(link)
+        ? { qqGroupId: link.qqGroupId, replyToQqMessageId: link.qqMessageId }
+        : undefined;
+    }
+
+    const route = this.resolveDiscordMessageRoute(message);
+    if (
+      !route ||
+      route.pair.direction === "qq-to-discord" ||
+      !this.discordRouteAllowed(message.channelId, route.routeChannelId)
+    ) {
+      return undefined;
+    }
+
+    return { qqGroupId: route.pair.qqGroupId };
+  }
+
+  private discordRouteAllowed(discordChannelId: string, routeDiscordChannelId: string): boolean {
+    return (
+      this.config.allowedDiscordChannelIds.size === 0 ||
+      this.config.allowedDiscordChannelIds.has(discordChannelId) ||
+      this.config.allowedDiscordChannelIds.has(routeDiscordChannelId)
+    );
   }
 
   private routeAllowsQqToDiscord(qqGroupId: string): boolean {
@@ -1261,7 +1350,9 @@ function getQqSenderName(event: OneBotMessageEvent): string {
   return card || nickname || `QQ ${event.user_id ?? "unknown"}`;
 }
 
-function getDiscordThreadInfo(message: Message): { parentId: string; name: string } | undefined {
+function getDiscordThreadInfo(
+  message: Message | PartialMessage
+): { parentId: string; name: string } | undefined {
   if (!message.channel.isThread() || !message.channel.parentId) {
     return undefined;
   }
@@ -1307,7 +1398,9 @@ function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
     .join("\n");
 }
 
-function formatDiscordReactionEmoji(reaction: MessageReaction): string {
+function formatDiscordReactionEmoji(
+  reaction: MessageReaction | PartialMessageReaction
+): string {
   if (reaction.emoji.id) {
     return `<${reaction.emoji.animated ? "a" : ""}:${reaction.emoji.name ?? "emoji"}:${reaction.emoji.id}>`;
   }

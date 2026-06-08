@@ -5,6 +5,7 @@ import {
   appendDiscordAttachmentsToQqSegments,
   chunkQqSegments,
   discordMessageToQqSegments,
+  discordReactionClearToQqSegments,
   discordReactionToQqSegments,
   discordTextToQqSegments,
   formatDiscordReplyFallback,
@@ -431,6 +432,46 @@ describe("Discord to QQ conversion", () => {
       { type: "reply", data: { id: "77" } },
       { type: "text", data: { text: "[Discord reaction] Alice added " } },
       { type: "face", data: { id: "14" } }
+    ]);
+  });
+
+  it("converts Discord reaction clear events to QQ summaries", () => {
+    expect(
+      discordReactionClearToQqSegments(
+        {
+          scope: "all",
+          reactionCount: 3,
+          replyToQqMessageId: "77"
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      { type: "reply", data: { id: "77" } },
+      {
+        type: "text",
+        data: { text: "[Discord reaction] cleared all reactions (3 emoji types)" }
+      }
+    ]);
+
+    expect(
+      discordReactionClearToQqSegments(
+        {
+          scope: "emoji",
+          emojiText: "<:qq_smile:222>",
+          reactionCount: 2
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map([["222", "14"]])
+        }
+      )
+    ).toEqual([
+      { type: "text", data: { text: "[Discord reaction] cleared all " } },
+      { type: "face", data: { id: "14" } },
+      { type: "text", data: { text: " reactions (2 reactions)" } }
     ]);
   });
 

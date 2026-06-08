@@ -87,6 +87,13 @@ export interface DiscordReactionToQqInput {
   replyToQqMessageId?: string;
 }
 
+export interface DiscordReactionClearToQqInput {
+  scope: "all" | "emoji";
+  emojiText?: string;
+  reactionCount?: number | null;
+  replyToQqMessageId?: string;
+}
+
 export interface QqReactionToDiscordInput {
   action: "added" | "removed";
   emojiId?: string;
@@ -276,6 +283,29 @@ export function discordReactionToQqSegments(
     `[Discord reaction] ${input.userLabel ?? "A Discord user"} ${input.action} `
   );
   appendSegments(segments, discordTextToQqSegments(input.emojiText, options));
+  return segments;
+}
+
+export function discordReactionClearToQqSegments(
+  input: DiscordReactionClearToQqInput,
+  options: DiscordTextToQqOptions
+): CqSegment[] {
+  const segments: CqSegment[] = [];
+  if (input.replyToQqMessageId) {
+    segments.push({ type: "reply", data: { id: input.replyToQqMessageId } });
+  }
+
+  if (input.scope === "emoji") {
+    appendTextSegment(segments, "[Discord reaction] cleared all ");
+    appendSegments(segments, discordTextToQqSegments(input.emojiText ?? "emoji", options));
+    appendTextSegment(segments, ` reactions${formatReactionCount(input.reactionCount)}`);
+    return segments;
+  }
+
+  appendTextSegment(
+    segments,
+    `[Discord reaction] cleared all reactions${formatReactionCount(input.reactionCount, "emoji type")}`
+  );
   return segments;
 }
 
@@ -594,6 +624,17 @@ function isImageAttachment(attachment: DiscordAttachmentLike): boolean {
   }
 
   return isLikelyImageUrl(attachment.url) || (attachment.name ? isLikelyImageUrl(attachment.name) : false);
+}
+
+function formatReactionCount(
+  count: number | null | undefined,
+  label = "reaction"
+): string {
+  if (count === undefined || count === null || !Number.isFinite(count)) {
+    return "";
+  }
+
+  return ` (${count} ${label}${count === 1 ? "" : "s"})`;
 }
 
 function formatDiscordPollToQqText(poll: DiscordPollLike): string {
