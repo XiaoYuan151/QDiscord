@@ -27,6 +27,7 @@ import {
   discordMessageToQqSegments,
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
+  type DiscordPollLike,
   formatDiscordReplyFallback,
   formatQqReplyFallback,
   qqReactionToDiscordContent,
@@ -99,6 +100,8 @@ export class QDiscordBridge {
         Partials.Channel,
         Partials.GuildMember,
         Partials.Message,
+        Partials.Poll,
+        Partials.PollAnswer,
         Partials.Reaction,
         Partials.User
       ]
@@ -445,7 +448,8 @@ export class QDiscordBridge {
         replyFallbackText,
         attachments: message.attachments.values(),
         stickers: message.stickers.values(),
-        embeds: message.embeds
+        embeds: message.embeds,
+        poll: discordPollToQqInput(message.poll)
       },
       {
         discordToQqUserMap: this.config.discordToQqUserMap,
@@ -1195,6 +1199,39 @@ function formatDiscordReactionEmoji(reaction: MessageReaction): string {
   }
 
   return reaction.emoji.name ?? "emoji";
+}
+
+function discordPollToQqInput(poll: Message["poll"]): DiscordPollLike | undefined {
+  if (!poll) {
+    return undefined;
+  }
+
+  return {
+    questionText: poll.question.text,
+    answers: [...poll.answers.values()].map((answer) => ({
+      id: answer.id,
+      text: answer.text,
+      emojiText: formatDiscordPollEmoji(answer.emoji),
+      voteCount: answer.voteCount
+    })),
+    allowMultiselect: poll.allowMultiselect,
+    expiresTimestamp: poll.expiresTimestamp,
+    resultsFinalized: poll.resultsFinalized
+  };
+}
+
+function formatDiscordPollEmoji(
+  emoji: { id: string | null; name: string | null; animated?: boolean | null } | null
+): string | undefined {
+  if (!emoji) {
+    return undefined;
+  }
+
+  if (emoji.id) {
+    return `<${emoji.animated ? "a" : ""}:${emoji.name ?? "emoji"}:${emoji.id}>`;
+  }
+
+  return emoji.name ?? undefined;
 }
 
 function extractOneBotReaction(

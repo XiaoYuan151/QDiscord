@@ -252,6 +252,71 @@ describe("Discord to QQ conversion", () => {
     ]);
   });
 
+  it("summarizes Discord polls as QQ text fallback", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "vote now",
+          poll: {
+            questionText: "Choose lunch",
+            answers: [
+              { id: 1, emojiText: "🍜", text: "Noodles", voteCount: 2 },
+              { id: 2, emojiText: "<:pizza:999>", text: "Pizza", voteCount: 1 }
+            ],
+            allowMultiselect: true,
+            expiresTimestamp: Date.UTC(2026, 0, 2, 3, 4, 5),
+            resultsFinalized: true
+          }
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      {
+        type: "text",
+        data: {
+          text: [
+            "vote now",
+            "[Discord poll] Choose lunch",
+            "1. 🍜 Noodles (2 votes)",
+            "2. <:pizza:999> Pizza (1 vote)",
+            "Multiple selections allowed",
+            "Ends: 2026-01-02T03:04:05.000Z",
+            "Results finalized"
+          ].join("\n")
+        }
+      }
+    ]);
+  });
+
+  it("keeps poll-only Discord messages bridgeable", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "",
+          senderLabel: "[Discord] Alice",
+          poll: {
+            questionText: "Pick one",
+            answers: [{ text: "Option A" }]
+          }
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      {
+        type: "text",
+        data: {
+          text: "[Discord] Alice: [Discord poll] Pick one\n1. Option A"
+        }
+      }
+    ]);
+  });
+
   it("preserves Discord reply context when no QQ reply id is available", () => {
     expect(
       discordMessageToQqSegments(

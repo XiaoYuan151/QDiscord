@@ -45,6 +45,21 @@ export interface DiscordEmbedLike {
   footer?: { text?: string | null } | null;
 }
 
+export interface DiscordPollAnswerLike {
+  id?: number | string | null;
+  text?: string | null;
+  emojiText?: string | null;
+  voteCount?: number | null;
+}
+
+export interface DiscordPollLike {
+  questionText?: string | null;
+  answers?: Iterable<DiscordPollAnswerLike>;
+  allowMultiselect?: boolean | null;
+  expiresTimestamp?: number | null;
+  resultsFinalized?: boolean | null;
+}
+
 export interface DiscordMessageToQqInput {
   content: string;
   senderLabel?: string;
@@ -53,6 +68,7 @@ export interface DiscordMessageToQqInput {
   attachments?: Iterable<DiscordAttachmentLike>;
   stickers?: Iterable<DiscordStickerLike>;
   embeds?: Iterable<DiscordEmbedLike>;
+  poll?: DiscordPollLike | null;
 }
 
 export interface DiscordReplyPreviewLike {
@@ -199,6 +215,7 @@ export function discordMessageToQqSegments(
 ): CqSegment[] {
   const bodySegments: CqSegment[] = [];
   appendSegments(bodySegments, discordTextToQqSegments(input.content, options));
+  appendDiscordPollToQqSegments(bodySegments, input.poll);
   appendDiscordAttachmentsToQqSegments(bodySegments, input.attachments ?? []);
   appendDiscordStickersToQqSegments(bodySegments, input.stickers ?? []);
   appendDiscordEmbedsToQqSegments(bodySegments, input.embeds ?? []);
@@ -415,6 +432,22 @@ export function appendDiscordEmbedsToQqSegments(
   }
 }
 
+export function appendDiscordPollToQqSegments(
+  segments: CqSegment[],
+  poll: DiscordPollLike | null | undefined
+): void {
+  if (!poll) {
+    return;
+  }
+
+  const text = formatDiscordPollToQqText(poll);
+  if (!text) {
+    return;
+  }
+
+  appendTextSegment(segments, `${segments.length > 0 ? "\n" : ""}${text}`);
+}
+
 export function escapeDiscordMarkdown(text: string): string {
   return text.replace(/([\\`*_{}[\]()#+\-.!|>])/g, "\\$1");
 }
@@ -561,6 +594,41 @@ function isImageAttachment(attachment: DiscordAttachmentLike): boolean {
   }
 
   return isLikelyImageUrl(attachment.url) || (attachment.name ? isLikelyImageUrl(attachment.name) : false);
+}
+
+function formatDiscordPollToQqText(poll: DiscordPollLike): string {
+  const question = normalizeWhitespace(poll.questionText ?? "") || "Untitled poll";
+  const lines = [`[Discord poll] ${truncateInline(question, 300)}`];
+  const answers = [...(poll.answers ?? [])];
+
+  for (const [index, answer] of answers.entries()) {
+    const id = answer.id !== undefined && answer.id !== null ? String(answer.id) : String(index + 1);
+    const emoji = normalizeWhitespace(answer.emojiText ?? "");
+    const text = normalizeWhitespace(answer.text ?? "");
+    const label = truncateInline([emoji, text].filter(Boolean).join(" ") || "Option", 160);
+    const votes =
+      answer.voteCount !== undefined && answer.voteCount !== null && Number.isFinite(answer.voteCount)
+        ? ` (${answer.voteCount} vote${answer.voteCount === 1 ? "" : "s"})`
+        : "";
+    lines.push(`${id}. ${label}${votes}`);
+  }
+
+  if (poll.allowMultiselect) {
+    lines.push("Multiple selections allowed");
+  }
+
+  if (poll.expiresTimestamp !== undefined && poll.expiresTimestamp !== null) {
+    const expiresAt = new Date(poll.expiresTimestamp);
+    if (!Number.isNaN(expiresAt.getTime())) {
+      lines.push(`Ends: ${expiresAt.toISOString()}`);
+    }
+  }
+
+  if (poll.resultsFinalized) {
+    lines.push("Results finalized");
+  }
+
+  return lines.join("\n");
 }
 
 function isLikelyAudioUrl(url: string): boolean {
