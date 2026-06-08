@@ -235,6 +235,14 @@ export class QDiscordBridge {
       );
     });
 
+    this.discord.on(Events.MessageBulkDelete, (messages) => {
+      const messageIds = [...messages.keys()];
+      this.enqueueDiscordToQq(
+        `message-bulk-delete:${messageIds.length}:${messageIds[0] ?? "unknown"}`,
+        () => this.handleDiscordMessageBulkDelete(messages.values())
+      );
+    });
+
     this.discord.on(Events.MessageReactionAdd, (reaction, user) => {
       this.enqueueDiscordToQq(`reaction-add:${reaction.message.id}:${user.id}`, () =>
         this.handleDiscordReaction(reaction, user, "added")
@@ -559,6 +567,27 @@ export class QDiscordBridge {
     await this.deleteQqMessage(existing.qqMessageId);
     this.forgetByDiscordMessageId(message.id);
     this.persistMessageLinks();
+  }
+
+  private async handleDiscordMessageBulkDelete(
+    messages: Iterable<Message | PartialMessage>
+  ): Promise<void> {
+    let deleted = 0;
+    for (const message of messages) {
+      const existing = this.getLinkByDiscordMessageId(message.id);
+      if (!existing || !this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+        continue;
+      }
+
+      await this.deleteQqMessage(existing.qqMessageId);
+      this.forgetByDiscordMessageId(message.id);
+      deleted += 1;
+    }
+
+    if (deleted > 0) {
+      this.persistMessageLinks();
+      this.logger.info("Synchronized Discord bulk delete to QQ", { deleted });
+    }
   }
 
   private async handleDiscordMemberEvent(
