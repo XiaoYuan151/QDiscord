@@ -256,6 +256,25 @@ describe("Discord to QQ conversion", () => {
     ]);
   });
 
+  it("does not emit sender-only segments for empty Discord messages", () => {
+    expect(
+      discordMessageToQqSegments(
+        {
+          content: "",
+          senderLabel: "[Discord] Alice",
+          replyFallbackText: "[Discord reply to 123]",
+          attachments: [],
+          stickers: [],
+          embeds: []
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([]);
+  });
+
   it("splits long Discord content and QQ text segments", () => {
     const discordChunks = splitDiscordContent("alpha beta gamma delta epsilon zeta eta", 32);
     expect(discordChunks.length).toBeGreaterThan(1);

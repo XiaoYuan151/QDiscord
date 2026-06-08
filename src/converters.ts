@@ -181,6 +181,16 @@ export function discordMessageToQqSegments(
   input: DiscordMessageToQqInput,
   options: DiscordTextToQqOptions
 ): CqSegment[] {
+  const bodySegments: CqSegment[] = [];
+  appendSegments(bodySegments, discordTextToQqSegments(input.content, options));
+  appendDiscordAttachmentsToQqSegments(bodySegments, input.attachments ?? []);
+  appendDiscordStickersToQqSegments(bodySegments, input.stickers ?? []);
+  appendDiscordEmbedsToQqSegments(bodySegments, input.embeds ?? []);
+
+  if (bodySegments.length === 0) {
+    return [];
+  }
+
   const segments: CqSegment[] = [];
 
   if (input.replyToQqMessageId) {
@@ -193,10 +203,7 @@ export function discordMessageToQqSegments(
     appendTextSegment(segments, `${input.senderLabel}: `);
   }
 
-  appendSegments(segments, discordTextToQqSegments(input.content, options));
-  appendDiscordAttachmentsToQqSegments(segments, input.attachments ?? []);
-  appendDiscordStickersToQqSegments(segments, input.stickers ?? []);
-  appendDiscordEmbedsToQqSegments(segments, input.embeds ?? []);
+  appendSegments(segments, bodySegments);
 
   return segments;
 }
