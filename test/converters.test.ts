@@ -183,6 +183,21 @@ describe("Discord to QQ conversion", () => {
     ]);
   });
 
+  it("classifies media attachments by URL or name when content type is missing", () => {
+    const segments: CqSegment[] = [];
+    appendDiscordAttachmentsToQqSegments(segments, [
+      { url: "https://cdn.discordapp.com/attachments/a", name: "photo.png" },
+      { url: "https://cdn.discordapp.com/attachments/video.mp4?ex=1", name: "download" },
+      { url: "https://cdn.discordapp.com/attachments/a", name: "voice.opus" }
+    ]);
+
+    expect(segments).toEqual([
+      { type: "image", data: { file: "https://cdn.discordapp.com/attachments/a" } },
+      { type: "video", data: { file: "https://cdn.discordapp.com/attachments/video.mp4?ex=1" } },
+      { type: "record", data: { file: "https://cdn.discordapp.com/attachments/a" } }
+    ]);
+  });
+
   it("sanitizes generic attachment names", () => {
     const segments: CqSegment[] = [];
     appendDiscordAttachmentsToQqSegments(segments, [

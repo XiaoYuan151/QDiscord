@@ -334,12 +334,20 @@ export function appendDiscordAttachmentsToQqSegments(
       continue;
     }
 
-    if (attachment.contentType?.startsWith("audio/") || isLikelyAudioUrl(attachment.url)) {
+    if (
+      attachment.contentType?.startsWith("audio/") ||
+      isLikelyAudioUrl(attachment.url) ||
+      (attachment.name ? isLikelyAudioUrl(attachment.name) : false)
+    ) {
       segments.push({ type: "record", data: { file: attachment.url } });
       continue;
     }
 
-    if (attachment.contentType?.startsWith("video/")) {
+    if (
+      attachment.contentType?.startsWith("video/") ||
+      isLikelyVideoUrl(attachment.url) ||
+      (attachment.name ? isLikelyVideoUrl(attachment.name) : false)
+    ) {
       segments.push({ type: "video", data: { file: attachment.url } });
       continue;
     }
@@ -552,7 +560,7 @@ function isImageAttachment(attachment: DiscordAttachmentLike): boolean {
     return true;
   }
 
-  return isLikelyImageUrl(attachment.url);
+  return isLikelyImageUrl(attachment.url) || (attachment.name ? isLikelyImageUrl(attachment.name) : false);
 }
 
 function isLikelyAudioUrl(url: string): boolean {
