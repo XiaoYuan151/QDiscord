@@ -15,6 +15,7 @@ It supports:
 - Discord embeds, stickers, images, audio, video, and generic files to QQ segments
 - QQ image, voice, video, and file segments to Discord attachments when OneBot exposes HTTP URLs
 - Basic reply, edit, delete/recall, and Discord bulk-delete synchronization
+- Discord thread messages through bridge pairs configured on the parent channel
 - Join/leave notices, best-effort QQ typing notices, queue retries, health endpoints, and `/bridge status`
 
 ## Requirements

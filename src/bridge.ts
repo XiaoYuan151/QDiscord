@@ -41,6 +41,7 @@ import { AsyncTaskQueue } from "./queue.js";
 import type {
   AppConfig,
   BridgeRuntimeStatus,
+  BridgePair,
   CqSegment,
   OneBotMessageEvent,
   OneBotNoticeEvent,
@@ -71,6 +72,12 @@ interface MessageLink {
 
 interface ForwardOptions {
   edited?: boolean;
+}
+
+export interface DiscordBridgeRoute {
+  pair: BridgePair;
+  routeChannelId: string;
+  threadName?: string;
 }
 
 export class QDiscordBridge {
@@ -447,11 +454,15 @@ export class QDiscordBridge {
   }
 
   private async handleDiscordMessage(message: Message, options: ForwardOptions = {}): Promise<void> {
-    const pair = this.config.discordChannelToBridgePair.get(message.channelId);
-    if (!pair || pair.direction === "qq-to-discord" || !this.shouldBridgeDiscordMessage(message)) {
+    const route = this.resolveDiscordMessageRoute(message);
+    if (
+      !route ||
+      route.pair.direction === "qq-to-discord" ||
+      !this.shouldBridgeDiscordMessage(message, route.routeChannelId)
+    ) {
       return;
     }
-    const qqGroupId = pair.qqGroupId;
+    const qqGroupId = route.pair.qqGroupId;
 
     const referencedDiscordMessageId = message.reference?.messageId;
     const replyToQqMessageId = referencedDiscordMessageId
@@ -462,8 +473,9 @@ export class QDiscordBridge {
         ? await this.createDiscordReplyFallback(message, referencedDiscordMessageId)
         : undefined;
     const senderName = getDiscordSenderName(message);
+    const threadSource = route.threadName ? ` thread #${route.threadName}` : "";
     const senderLabel = this.config.showSenderName
-      ? `[Discord${options.edited ? " edited" : ""}] ${senderName}`
+      ? `[Discord${threadSource}${options.edited ? " edited" : ""}] ${senderName}`
       : options.edited
         ? "[Discord edited]"
         : undefined;
@@ -518,7 +530,7 @@ export class QDiscordBridge {
 
     const existing = this.getLinkByDiscordMessageId(message.id);
     if (existing) {
-      if (!this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+      if (!this.linkAllowsDiscordToQq(existing)) {
         return;
       }
 
@@ -560,7 +572,7 @@ export class QDiscordBridge {
       return;
     }
 
-    if (!this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+    if (!this.linkAllowsDiscordToQq(existing)) {
       return;
     }
 
@@ -575,7 +587,7 @@ export class QDiscordBridge {
     let deleted = 0;
     for (const message of messages) {
       const existing = this.getLinkByDiscordMessageId(message.id);
-      if (!existing || !this.routeAllowsDiscordToQq(existing.discordChannelId)) {
+      if (!existing || !this.linkAllowsDiscordToQq(existing)) {
         continue;
       }
 
@@ -843,10 +855,11 @@ export class QDiscordBridge {
     await channel?.sendTyping?.();
   }
 
-  private shouldBridgeDiscordMessage(message: Message): boolean {
+  private shouldBridgeDiscordMessage(message: Message, routeDiscordChannelId = message.channelId): boolean {
     if (
       this.config.allowedDiscordChannelIds.size > 0 &&
-      !this.config.allowedDiscordChannelIds.has(message.channelId)
+      !this.config.allowedDiscordChannelIds.has(message.channelId) &&
+      !this.config.allowedDiscordChannelIds.has(routeDiscordChannelId)
     ) {
       return false;
     }
@@ -862,8 +875,18 @@ export class QDiscordBridge {
     return this.config.bridgeBotMessages || !message.author.bot;
   }
 
-  private routeAllowsDiscordToQq(discordChannelId: string): boolean {
-    const pair = this.config.discordChannelToBridgePair.get(discordChannelId);
+  private resolveDiscordMessageRoute(message: Message): DiscordBridgeRoute | undefined {
+    const thread = getDiscordThreadInfo(message);
+    return resolveDiscordBridgeRoute({
+      channelId: message.channelId,
+      threadParentId: thread?.parentId,
+      threadName: thread?.name,
+      bridgePairs: this.config.discordChannelToBridgePair
+    });
+  }
+
+  private linkAllowsDiscordToQq(link: MessageLink): boolean {
+    const pair = this.config.qqGroupToBridgePair.get(link.qqGroupId);
     return pair !== undefined && pair.direction !== "qq-to-discord";
   }
 
@@ -1146,10 +1169,7 @@ export class QDiscordBridge {
 
     try {
       for (const link of this.linkStore.load()) {
-        if (
-          this.config.discordChannelToBridgePair.has(link.discordChannelId) &&
-          this.config.qqGroupToBridgePair.has(link.qqGroupId)
-        ) {
+        if (this.config.qqGroupToBridgePair.has(link.qqGroupId)) {
           this.discordLinks.set(link.discordMessageId, link);
           this.qqLinks.set(link.qqMessageId, link);
         }
@@ -1208,10 +1228,48 @@ export function isStatusCommandAuthorized(input: {
   return input.allowedUserIds.has(input.userId) || input.hasManageGuild;
 }
 
+export function resolveDiscordBridgeRoute(input: {
+  channelId: string;
+  threadParentId?: string | null;
+  threadName?: string;
+  bridgePairs: Map<string, BridgePair>;
+}): DiscordBridgeRoute | undefined {
+  const directPair = input.bridgePairs.get(input.channelId);
+  if (directPair) {
+    return { pair: directPair, routeChannelId: input.channelId };
+  }
+
+  if (!input.threadParentId) {
+    return undefined;
+  }
+
+  const parentPair = input.bridgePairs.get(input.threadParentId);
+  if (!parentPair) {
+    return undefined;
+  }
+
+  return {
+    pair: parentPair,
+    routeChannelId: input.threadParentId,
+    threadName: input.threadName
+  };
+}
+
 function getQqSenderName(event: OneBotMessageEvent): string {
   const card = event.sender?.card?.trim();
   const nickname = event.sender?.nickname?.trim();
   return card || nickname || `QQ ${event.user_id ?? "unknown"}`;
+}
+
+function getDiscordThreadInfo(message: Message): { parentId: string; name: string } | undefined {
+  if (!message.channel.isThread() || !message.channel.parentId) {
+    return undefined;
+  }
+
+  return {
+    parentId: message.channel.parentId,
+    name: message.channel.name
+  };
 }
 
 async function upsertStatusCommand(
