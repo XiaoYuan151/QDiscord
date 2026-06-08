@@ -28,9 +28,11 @@ describe("MessageLinkStore", () => {
     store.save([
       {
         discordMessageId: "1",
+        discordMessageIds: ["1", "1b"],
         discordChannelId: "2",
         qqGroupId: "3",
         qqMessageId: "4",
+        qqMessageIds: ["4", "4b"],
         createdAt: 123
       }
     ]);
@@ -38,9 +40,11 @@ describe("MessageLinkStore", () => {
     expect(new MessageLinkStore(path).load()).toEqual([
       {
         discordMessageId: "1",
+        discordMessageIds: ["1", "1b"],
         discordChannelId: "2",
         qqGroupId: "3",
         qqMessageId: "4",
+        qqMessageIds: ["4", "4b"],
         createdAt: 123
       }
     ]);

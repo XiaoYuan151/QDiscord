@@ -4,6 +4,7 @@ import {
   formatOneBotGroupNotice,
   isOneBotNoticeBlocked,
   isStatusCommandAuthorized,
+  normalizeMessageLink,
   resolveDiscordBridgeRoute
 } from "../src/bridge.js";
 import type { BridgePair, OneBotNoticeEvent } from "../src/types.js";
@@ -33,6 +34,45 @@ describe("bridge command authorization", () => {
         hasManageGuild: false
       })
     ).toBe(false);
+  });
+});
+
+describe("bridge message link normalization", () => {
+  it("deduplicates linked message ids while preserving first reply targets", () => {
+    expect(
+      normalizeMessageLink({
+        discordMessageId: "d1",
+        discordMessageIds: ["d1", "d2", "d2"],
+        discordChannelId: "channel",
+        qqGroupId: "group",
+        qqMessageId: "q1",
+        qqMessageIds: ["q1", "q2", "q2"],
+        createdAt: 123
+      })
+    ).toEqual({
+      discordMessageId: "d1",
+      discordMessageIds: ["d1", "d2"],
+      discordChannelId: "channel",
+      qqGroupId: "group",
+      qqMessageId: "q1",
+      qqMessageIds: ["q1", "q2"],
+      createdAt: 123
+    });
+  });
+
+  it("upgrades legacy single-id links to multi-id shape", () => {
+    expect(
+      normalizeMessageLink({
+        discordMessageId: "d1",
+        discordChannelId: "channel",
+        qqGroupId: "group",
+        qqMessageId: "q1",
+        createdAt: 123
+      })
+    ).toMatchObject({
+      discordMessageIds: ["d1"],
+      qqMessageIds: ["q1"]
+    });
   });
 });
 

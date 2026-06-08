@@ -3,9 +3,11 @@ import { dirname } from "node:path";
 
 export interface StoredMessageLink {
   discordMessageId: string;
+  discordMessageIds?: string[];
   discordChannelId: string;
   qqGroupId: string;
   qqMessageId: string;
+  qqMessageIds?: string[];
   createdAt: number;
 }
 
@@ -59,11 +61,17 @@ function isStoredMessageLink(value: unknown): value is StoredMessageLink {
   const link = value as Record<string, unknown>;
   return (
     typeof link.discordMessageId === "string" &&
+    stringArrayOrUndefined(link.discordMessageIds) &&
     typeof link.discordChannelId === "string" &&
     typeof link.qqGroupId === "string" &&
     typeof link.qqMessageId === "string" &&
+    stringArrayOrUndefined(link.qqMessageIds) &&
     typeof link.createdAt === "number"
   );
+}
+
+function stringArrayOrUndefined(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every((item) => typeof item === "string"));
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

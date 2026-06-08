@@ -112,6 +112,8 @@ Set `MESSAGE_LINK_STORE_PATH` to persist reply/delete mappings across restarts:
 MESSAGE_LINK_STORE_PATH=.qdiscord-links.json
 ```
 
+When long messages or file batches produce multiple outbound messages, QDiscord tracks the whole linked set so edits, deletes, and recalls clean up every bridged part.
+
 NapCat reconnects use bounded exponential backoff:
 
 ```bash

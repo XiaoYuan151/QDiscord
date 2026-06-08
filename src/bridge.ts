@@ -65,11 +65,13 @@ type CommandManagerLike = {
   edit(commandId: Snowflake, data: StatusCommandData): Promise<unknown>;
 };
 
-interface MessageLink {
+export interface MessageLink {
   discordMessageId: string;
+  discordMessageIds?: string[];
   discordChannelId: string;
   qqGroupId: string;
   qqMessageId: string;
+  qqMessageIds?: string[];
   createdAt: number;
 }
 
@@ -198,7 +200,7 @@ export class QDiscordBridge {
       },
       bridgePairs: this.config.bridgePairs.length,
       messageLinks: {
-        tracked: this.discordLinks.size,
+        tracked: this.uniqueMessageLinks().length,
         maxEntries: this.config.messageLinkMaxEntries,
         ttlMs: this.config.messageLinkTtlMs
       },
@@ -528,13 +530,18 @@ export class QDiscordBridge {
     }
 
     const results = await this.sendQqSegments(qqGroupId, segments);
-    const result = results.find((item) => item.message_id !== undefined);
-    if (result?.message_id !== undefined) {
+    const qqMessageIds = results
+      .map((item) => item.message_id)
+      .filter((messageId) => messageId !== undefined)
+      .map(String);
+    if (qqMessageIds.length > 0) {
       this.rememberMessageLink({
         discordMessageId: message.id,
+        discordMessageIds: [message.id],
         discordChannelId: message.channelId,
         qqGroupId,
-        qqMessageId: String(result.message_id),
+        qqMessageId: qqMessageIds[0] ?? "",
+        qqMessageIds,
         createdAt: Date.now()
       });
     }
@@ -551,7 +558,7 @@ export class QDiscordBridge {
         return;
       }
 
-      await this.deleteQqMessage(existing.qqMessageId);
+      await this.deleteQqMessages(messageLinkQqIds(existing));
       this.forgetByDiscordMessageId(message.id);
       this.persistMessageLinks();
     }
@@ -593,7 +600,7 @@ export class QDiscordBridge {
       return;
     }
 
-    await this.deleteQqMessage(existing.qqMessageId);
+    await this.deleteQqMessages(messageLinkQqIds(existing));
     this.forgetByDiscordMessageId(message.id);
     this.persistMessageLinks();
   }
@@ -608,7 +615,7 @@ export class QDiscordBridge {
         continue;
       }
 
-      await this.deleteQqMessage(existing.qqMessageId);
+      await this.deleteQqMessages(messageLinkQqIds(existing));
       this.forgetByDiscordMessageId(message.id);
       deleted += 1;
     }
@@ -794,11 +801,14 @@ export class QDiscordBridge {
 
     const qqMessageId = event.message_id;
     if (qqMessageId !== undefined && sentMessages[0]) {
+      const discordMessageIds = sentMessages.map((sentMessage) => sentMessage.id);
       this.rememberMessageLink({
         discordMessageId: sentMessages[0].id,
+        discordMessageIds,
         discordChannelId,
         qqGroupId,
         qqMessageId: String(qqMessageId),
+        qqMessageIds: [String(qqMessageId)],
         createdAt: Date.now()
       });
     }
@@ -815,7 +825,7 @@ export class QDiscordBridge {
         return;
       }
 
-      await this.deleteDiscordMessage(link.discordChannelId, link.discordMessageId);
+      await this.deleteDiscordMessages(link.discordChannelId, messageLinkDiscordIds(link));
       this.forgetByQqMessageId(link.qqMessageId);
       this.persistMessageLinks();
       return;
@@ -1194,6 +1204,12 @@ export class QDiscordBridge {
     }
   }
 
+  private async deleteQqMessages(qqMessageIds: string[]): Promise<void> {
+    for (const qqMessageId of qqMessageIds) {
+      await this.deleteQqMessage(qqMessageId);
+    }
+  }
+
   private async deleteDiscordMessage(channelId: string, messageId: string): Promise<void> {
     try {
       const channel = await this.discord.channels.fetch(channelId as Snowflake);
@@ -1206,6 +1222,12 @@ export class QDiscordBridge {
     }
   }
 
+  private async deleteDiscordMessages(channelId: string, messageIds: string[]): Promise<void> {
+    for (const messageId of messageIds) {
+      await this.deleteDiscordMessage(channelId, messageId);
+    }
+  }
+
   private async waitForOneBotConnection(): Promise<void> {
     if (await this.oneBot.waitUntilConnected(this.config.oneBotActionTimeoutMs)) {
       return;
@@ -1215,13 +1237,27 @@ export class QDiscordBridge {
   }
 
   private rememberMessageLink(link: MessageLink): void {
+    const normalized = normalizeMessageLink(link);
     this.pruneMessageLinks();
-    this.forgetByDiscordMessageId(link.discordMessageId);
-    this.forgetByQqMessageId(link.qqMessageId);
-    this.discordLinks.set(link.discordMessageId, link);
-    this.qqLinks.set(link.qqMessageId, link);
+    for (const discordMessageId of messageLinkDiscordIds(normalized)) {
+      this.forgetByDiscordMessageId(discordMessageId);
+    }
+    for (const qqMessageId of messageLinkQqIds(normalized)) {
+      this.forgetByQqMessageId(qqMessageId);
+    }
+    this.indexMessageLink(normalized);
     this.pruneMessageLinks();
     this.persistMessageLinks();
+  }
+
+  private indexMessageLink(link: MessageLink): void {
+    const normalized = normalizeMessageLink(link);
+    for (const discordMessageId of messageLinkDiscordIds(normalized)) {
+      this.discordLinks.set(discordMessageId, normalized);
+    }
+    for (const qqMessageId of messageLinkQqIds(normalized)) {
+      this.qqLinks.set(qqMessageId, normalized);
+    }
   }
 
   private getLinkByDiscordMessageId(discordMessageId: string): MessageLink | undefined {
@@ -1240,8 +1276,12 @@ export class QDiscordBridge {
       return;
     }
 
-    this.discordLinks.delete(link.discordMessageId);
-    this.qqLinks.delete(link.qqMessageId);
+    for (const id of messageLinkDiscordIds(link)) {
+      this.discordLinks.delete(id);
+    }
+    for (const id of messageLinkQqIds(link)) {
+      this.qqLinks.delete(id);
+    }
   }
 
   private forgetByQqMessageId(qqMessageId: string): void {
@@ -1250,22 +1290,26 @@ export class QDiscordBridge {
       return;
     }
 
-    this.discordLinks.delete(link.discordMessageId);
-    this.qqLinks.delete(link.qqMessageId);
+    for (const id of messageLinkDiscordIds(link)) {
+      this.discordLinks.delete(id);
+    }
+    for (const id of messageLinkQqIds(link)) {
+      this.qqLinks.delete(id);
+    }
   }
 
   private pruneMessageLinks(): void {
     let removed = false;
     const expiresBefore = Date.now() - this.config.messageLinkTtlMs;
-    for (const link of this.discordLinks.values()) {
+    for (const link of this.uniqueMessageLinks()) {
       if (link.createdAt < expiresBefore) {
         this.forgetByDiscordMessageId(link.discordMessageId);
         removed = true;
       }
     }
 
-    while (this.discordLinks.size > this.config.messageLinkMaxEntries) {
-      const oldest = this.discordLinks.values().next().value as MessageLink | undefined;
+    while (this.uniqueMessageLinks().length > this.config.messageLinkMaxEntries) {
+      const oldest = this.uniqueMessageLinks()[0];
       if (!oldest) {
         return;
       }
@@ -1286,13 +1330,12 @@ export class QDiscordBridge {
     try {
       for (const link of this.linkStore.load()) {
         if (this.config.qqGroupToBridgePair.has(link.qqGroupId)) {
-          this.discordLinks.set(link.discordMessageId, link);
-          this.qqLinks.set(link.qqMessageId, link);
+          this.indexMessageLink(link);
         }
       }
       this.pruneMessageLinks();
       this.logger.info("Loaded persisted message links", {
-        count: this.discordLinks.size
+        count: this.uniqueMessageLinks().length
       });
     } catch (error) {
       this.logger.warn("Failed to load persisted message links", { error });
@@ -1305,10 +1348,14 @@ export class QDiscordBridge {
     }
 
     try {
-      this.linkStore.save([...this.discordLinks.values()]);
+      this.linkStore.save(this.uniqueMessageLinks());
     } catch (error) {
       this.logger.warn("Failed to persist message links", { error });
     }
+  }
+
+  private uniqueMessageLinks(): MessageLink[] {
+    return [...new Set(this.discordLinks.values())];
   }
 
   private enqueueDiscordToQq(label: string, task: () => Promise<void>): void {
@@ -1349,6 +1396,30 @@ export function isOneBotNoticeBlocked(
   blockedQqUserIds: Set<string>
 ): boolean {
   return event.user_id !== undefined && blockedQqUserIds.has(String(event.user_id));
+}
+
+export function normalizeMessageLink(link: MessageLink): MessageLink {
+  const discordMessageIds = messageLinkDiscordIds(link);
+  const qqMessageIds = messageLinkQqIds(link);
+  return {
+    ...link,
+    discordMessageId: discordMessageIds[0] ?? link.discordMessageId,
+    discordMessageIds,
+    qqMessageId: qqMessageIds[0] ?? link.qqMessageId,
+    qqMessageIds
+  };
+}
+
+function messageLinkDiscordIds(link: MessageLink): string[] {
+  return uniqueIds(link.discordMessageId, link.discordMessageIds);
+}
+
+function messageLinkQqIds(link: MessageLink): string[] {
+  return uniqueIds(link.qqMessageId, link.qqMessageIds);
+}
+
+function uniqueIds(primary: string, ids: string[] | undefined): string[] {
+  return [...new Set([primary, ...(ids ?? [])].filter((id) => id.trim() !== ""))];
 }
 
 export function resolveDiscordBridgeRoute(input: {
