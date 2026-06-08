@@ -45,4 +45,15 @@ describe("logger", () => {
     expect(payload.url).toBe("ws://127.0.0.1:3001/?access_token=[redacted]&x=1");
     expect(payload.error.message).toBe("Authorization: Bearer [redacted]");
   });
+
+  it("does not redact ordinary bot log messages", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const logger = createLogger("debug");
+
+    logger.info("Discord bot logged in", { userTag: "qdiscord#0000" });
+
+    const payload = JSON.parse(String(logSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+    expect(payload.message).toBe("Discord bot logged in");
+    expect(payload.userTag).toBe("qdiscord#0000");
+  });
 });

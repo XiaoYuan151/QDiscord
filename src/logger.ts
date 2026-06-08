@@ -97,6 +97,6 @@ function sanitizeString(value: string): string {
   return value
     .replace(/([?&]access_token=)[^&\s]+/gi, "$1[redacted]")
     .replace(/(authorization:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(authorization:\s*bot\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
-    .replace(/(bot\s+)[^\s,;]+/gi, "$1[redacted]");
 }

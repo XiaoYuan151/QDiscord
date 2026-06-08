@@ -178,4 +178,4 @@ npm test
 
 In NapCat, enable the OneBot v11 WebSocket server and set the URL/port to match `NAPCAT_WS_URL`. If you configure an access token in NapCat, set the same value in `NAPCAT_ACCESS_TOKEN`; QDiscord sends it as both a WebSocket query parameter and `Authorization: Bearer ...` header for compatibility.
 
-QDiscord accepts OneBot messages in either string CQ format or array segment format. Message reply, edit, and delete links are kept in memory, so they are best-effort and reset when the process restarts.
+QDiscord accepts OneBot messages in either string CQ format or array segment format. Message reply, edit, and delete links are best-effort; they reset on restart unless `MESSAGE_LINK_STORE_PATH` is configured.
