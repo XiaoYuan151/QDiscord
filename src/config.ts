@@ -97,8 +97,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       keyLabel: "DISCORD_TO_QQ_USER_MAP Discord user id",
       valueLabel: "DISCORD_TO_QQ_USER_MAP QQ id"
     }),
-    cqFaceEmojiMap: parseKeyValueMap(parsed.data.CQ_FACE_EMOJI_MAP),
-    discordEmojiToCqFaceMap: parseKeyValueMap(parsed.data.DISCORD_EMOJI_CQ_FACE_MAP),
+    cqFaceEmojiMap: parseCqFaceEmojiMap(parsed.data.CQ_FACE_EMOJI_MAP),
+    discordEmojiToCqFaceMap: parseDiscordEmojiToCqFaceMap(
+      parsed.data.DISCORD_EMOJI_CQ_FACE_MAP
+    ),
     showSenderName: parseBoolean(parsed.data.SHOW_SENDER_NAME, true),
     bridgeBotMessages: parseBoolean(parsed.data.BRIDGE_BOT_MESSAGES, false),
     allowEveryoneMentions: parseBoolean(parsed.data.ALLOW_EVERYONE_MENTIONS, false),
@@ -223,6 +225,24 @@ function parseIdMap(
   for (const [key, value] of map.entries()) {
     assertNumericId(key, labels.keyLabel);
     assertNumericId(value, labels.valueLabel);
+  }
+
+  return map;
+}
+
+function parseCqFaceEmojiMap(input: string | undefined): Map<string, string> {
+  const map = parseKeyValueMap(input);
+  for (const key of map.keys()) {
+    assertNumericId(key, "CQ_FACE_EMOJI_MAP QQ face id");
+  }
+
+  return map;
+}
+
+function parseDiscordEmojiToCqFaceMap(input: string | undefined): Map<string, string> {
+  const map = parseKeyValueMap(input);
+  for (const value of map.values()) {
+    assertNumericId(value, "DISCORD_EMOJI_CQ_FACE_MAP QQ face id");
   }
 
   return map;

@@ -186,4 +186,31 @@ describe("config", () => {
       })
     ).toThrow("BLOCKED_QQ_USER_IDS must be numeric");
   });
+
+  it("validates CQ face ids while allowing flexible Discord emoji keys", () => {
+    const config = loadConfig({
+      ...baseEnv,
+      CQ_FACE_EMOJI_MAP: "14:<:qq_smile:222>",
+      DISCORD_EMOJI_CQ_FACE_MAP: "qq_smile:14,🙂:15,222:16"
+    });
+
+    expect(config.cqFaceEmojiMap.get("14")).toBe("<:qq_smile:222>");
+    expect(config.discordEmojiToCqFaceMap.get("qq_smile")).toBe("14");
+    expect(config.discordEmojiToCqFaceMap.get("🙂")).toBe("15");
+    expect(config.discordEmojiToCqFaceMap.get("222")).toBe("16");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        CQ_FACE_EMOJI_MAP: "smile:🙂"
+      })
+    ).toThrow("CQ_FACE_EMOJI_MAP QQ face id must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        DISCORD_EMOJI_CQ_FACE_MAP: "🙂:smile"
+      })
+    ).toThrow("DISCORD_EMOJI_CQ_FACE_MAP QQ face id must be numeric");
+  });
 });
