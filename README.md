@@ -169,7 +169,7 @@ RESOLVE_QQ_MEDIA_URLS=true
 ```
 
 If your NapCat deployment cannot upload remote Discord CDN URLs, set this to `false`; QDiscord will send file links as text fallback messages.
-If QQ image or voice segments arrive with only OneBot file IDs, `RESOLVE_QQ_MEDIA_URLS=true` lets QDiscord call NapCat `get_image`/`get_record` before sending Discord attachments. Disable it if your OneBot server does not support those actions.
+If QQ image, voice, video, or file segments arrive with only OneBot file IDs, `RESOLVE_QQ_MEDIA_URLS=true` lets QDiscord call NapCat media URL actions before sending Discord attachments. Disable it if your OneBot server does not support those actions.
 
 ## Filtering and Safety
 

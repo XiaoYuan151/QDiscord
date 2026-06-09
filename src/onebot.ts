@@ -57,6 +57,11 @@ export interface OneBotForwardMessageData {
   [key: string]: unknown;
 }
 
+export interface OneBotGroupFileUrlData {
+  url?: string;
+  [key: string]: unknown;
+}
+
 export interface OneBotHeartbeatState {
   at: Date;
   online?: boolean;
@@ -187,6 +192,22 @@ export class OneBotClient extends EventEmitter {
     return this.sendAction("get_record", {
       file,
       out_format: outFormat
+    });
+  }
+
+  async getFile(fileId: string): Promise<OneBotMediaData> {
+    return this.sendAction("get_file", { file_id: fileId });
+  }
+
+  async getGroupFileUrl(
+    groupId: string,
+    fileId: string,
+    busid?: string
+  ): Promise<OneBotGroupFileUrlData> {
+    return this.sendAction("get_group_file_url", {
+      group_id: normalizeOneBotId(groupId),
+      file_id: fileId,
+      ...(busid ? { busid: normalizeOneBotId(busid) } : {})
     });
   }
 

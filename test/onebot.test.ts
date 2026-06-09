@@ -76,6 +76,14 @@ describe("OneBotClient", () => {
         sendActionResponse(socket, packet.echo, { url: "https://example.com/voice.mp3" });
         return;
       }
+      if (packet.action === "get_file") {
+        sendActionResponse(socket, packet.echo, { url: "https://example.com/video.mp4" });
+        return;
+      }
+      if (packet.action === "get_group_file_url") {
+        sendActionResponse(socket, packet.echo, { url: "https://example.com/file.zip" });
+        return;
+      }
       if (packet.action === "get_forward_msg") {
         sendActionResponse(socket, packet.echo, {
           messages: [{ sender: { nickname: "Alice" }, content: "hello" }]
@@ -96,6 +104,12 @@ describe("OneBotClient", () => {
     });
     await expect(client.getRecord("voice-file-id")).resolves.toEqual({
       url: "https://example.com/voice.mp3"
+    });
+    await expect(client.getFile("video-file-id")).resolves.toEqual({
+      url: "https://example.com/video.mp4"
+    });
+    await expect(client.getGroupFileUrl("123", "group-file-id", "102")).resolves.toEqual({
+      url: "https://example.com/file.zip"
     });
     await expect(client.getForwardMessage("forward-id")).resolves.toEqual({
       messages: [{ sender: { nickname: "Alice" }, content: "hello" }]
@@ -123,6 +137,14 @@ describe("OneBotClient", () => {
       {
         action: "get_record",
         params: { file: "voice-file-id", out_format: "mp3" }
+      },
+      {
+        action: "get_file",
+        params: { file_id: "video-file-id" }
+      },
+      {
+        action: "get_group_file_url",
+        params: { group_id: 123, file_id: "group-file-id", busid: 102 }
       },
       {
         action: "get_forward_msg",

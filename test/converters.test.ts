@@ -70,6 +70,7 @@ describe("QQ to Discord conversion", () => {
         { type: "reply", data: { id: "42" } },
         { type: "record", data: { url: "https://example.com/a.ogg" } },
         { type: "video", data: { file: "https://example.com/a.mp4" } },
+        { type: "file", data: { url: "https://example.com/file.zip" } },
         { type: "file", data: { file: "local-file.zip" } }
       ],
       {
@@ -79,7 +80,11 @@ describe("QQ to Discord conversion", () => {
     );
 
     expect(result.replyToMessageId).toBe("42");
-    expect(result.files).toEqual(["https://example.com/a.ogg", "https://example.com/a.mp4"]);
+    expect(result.files).toEqual([
+      "https://example.com/a.ogg",
+      "https://example.com/a.mp4",
+      "https://example.com/file.zip"
+    ]);
     expect(result.content).toBe("[QQ file: local-file.zip]");
   });
 

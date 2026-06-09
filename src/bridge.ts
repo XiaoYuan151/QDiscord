@@ -866,7 +866,7 @@ export class QDiscordBridge {
     const forwardedSegments = await this.resolveOneBotForwardMessages(
       normalizeOneBotMessage(event.message ?? event.raw_message)
     );
-    const qqSegments = await this.resolveOneBotMediaUrls(forwardedSegments);
+    const qqSegments = await this.resolveOneBotMediaUrls(qqGroupId, forwardedSegments);
     const converted = qqSegmentsToDiscord(qqSegments, {
       qqToDiscordUserMap: this.config.qqToDiscordUserMap,
       cqFaceEmojiMap: this.config.cqFaceEmojiMap
@@ -1090,20 +1090,29 @@ export class QDiscordBridge {
     return resolvedSegments;
   }
 
-  private async resolveOneBotMediaUrls(segments: CqSegment[]): Promise<CqSegment[]> {
+  private async resolveOneBotMediaUrls(
+    qqGroupId: string,
+    segments: CqSegment[]
+  ): Promise<CqSegment[]> {
     if (!this.config.resolveQqMediaUrls) {
       return segments;
     }
 
     const resolvedSegments: CqSegment[] = [];
     for (const segment of segments) {
-      resolvedSegments.push(await this.resolveOneBotMediaUrl(segment));
+      resolvedSegments.push(await this.resolveOneBotMediaUrl(qqGroupId, segment));
     }
     return resolvedSegments;
   }
 
-  private async resolveOneBotMediaUrl(segment: CqSegment): Promise<CqSegment> {
-    if (segment.type !== "image" && segment.type !== "mface" && segment.type !== "record") {
+  private async resolveOneBotMediaUrl(qqGroupId: string, segment: CqSegment): Promise<CqSegment> {
+    if (
+      segment.type !== "image" &&
+      segment.type !== "mface" &&
+      segment.type !== "record" &&
+      segment.type !== "video" &&
+      segment.type !== "file"
+    ) {
       return segment;
     }
 
@@ -1114,11 +1123,7 @@ export class QDiscordBridge {
 
     try {
       await this.waitForOneBotConnection();
-      const media =
-        segment.type === "record"
-          ? await this.oneBot.getRecord(file)
-          : await this.oneBot.getImage(file);
-      const url = firstString(media.url, media.file, media.path);
+      const url = await this.resolveOneBotMediaUrlValue(qqGroupId, segment, file);
       if (!url || !isHttpUrl(url)) {
         return segment;
       }
@@ -1138,6 +1143,42 @@ export class QDiscordBridge {
       });
       return segment;
     }
+  }
+
+  private async resolveOneBotMediaUrlValue(
+    qqGroupId: string,
+    segment: CqSegment,
+    file: string
+  ): Promise<string | undefined> {
+    if (segment.type === "record") {
+      const media = await this.oneBot.getRecord(file);
+      return firstString(media.url, media.file, media.path);
+    }
+
+    if (segment.type === "image" || segment.type === "mface") {
+      const media = await this.oneBot.getImage(file);
+      return firstString(media.url, media.file, media.path);
+    }
+
+    if (segment.type === "file") {
+      const fileId = firstString(segment.data.file_id, segment.data.id, segment.data.file);
+      if (fileId) {
+        const groupFile = await this.oneBot.getGroupFileUrl(
+          qqGroupId,
+          fileId,
+          firstString(segment.data.busid, segment.data.bus_id)
+        );
+        const url = firstString(groupFile.url);
+        if (url) {
+          return url;
+        }
+      }
+    }
+
+    const media = await this.oneBot.getFile(
+      firstString(segment.data.file_id, segment.data.id) ?? file
+    );
+    return firstString(media.url, media.file, media.path);
   }
 
   private async createQqReplyFallback(qqMessageId: string): Promise<string> {
