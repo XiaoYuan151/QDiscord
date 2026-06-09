@@ -116,6 +116,34 @@ describe("QQ to Discord conversion", () => {
     );
   });
 
+  it("summarizes QQ rich utility segments", () => {
+    const result = qqSegmentsToDiscord(
+      [
+        { type: "contact", data: { type: "qq", id: "123" } },
+        { type: "tts", data: { text: "listen" } },
+        { type: "markdown", data: { content: "**bold**" } },
+        {
+          type: "keyboard",
+          data: {
+            content: JSON.stringify({
+              rows: [{ buttons: [{ label: "Approve" }, { text: "Deny" }] }]
+            })
+          }
+        },
+        { type: "redbag", data: { title: "lucky" } },
+        { type: "basketball", data: { id: "5" } }
+      ],
+      {
+        qqToDiscordUserMap: new Map(),
+        cqFaceEmojiMap: new Map()
+      }
+    );
+
+    expect(result.content).toBe(
+      "[QQ contact: qq 123][QQ TTS: listen][QQ markdown]\n**bold**[QQ keyboard: Approve, Deny][QQ redbag: title=lucky][QQ basketball: id=5]"
+    );
+  });
+
   it("flattens QQ forwarded messages into Discord-readable content and files", () => {
     const segments = oneBotForwardMessageToSegments({
       messages: [

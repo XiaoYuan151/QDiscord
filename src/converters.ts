@@ -207,6 +207,28 @@ export function qqSegmentsToDiscord(
         parts.push(url ? `[QQ music: ${title} ${url}]` : `[QQ music: ${title}]`);
         break;
       }
+      case "contact": {
+        const contactType = firstValue(segment.data.type, segment.data.contact_type) ?? "unknown";
+        const contactId = firstValue(segment.data.id, segment.data.qq, segment.data.group_id);
+        parts.push(
+          `[QQ contact: ${contactType}${contactId ? ` ${contactId}` : ""}]`
+        );
+        break;
+      }
+      case "tts": {
+        parts.push(`[QQ TTS: ${firstValue(segment.data.text, segment.data.content) ?? "empty"}]`);
+        break;
+      }
+      case "markdown": {
+        const markdown = firstValue(segment.data.content, segment.data.text, segment.data.markdown);
+        parts.push(markdown ? `[QQ markdown]\n${markdown}` : "[QQ markdown]");
+        break;
+      }
+      case "keyboard": {
+        const labels = summarizeKeyboardLabels(segment.data);
+        parts.push(labels ? `[QQ keyboard: ${labels}]` : "[QQ keyboard]");
+        break;
+      }
       case "json":
       case "xml": {
         parts.push(`[QQ ${segment.type}: ${summarizeRichPayload(segment.type, segment.data)}]`);
@@ -221,6 +243,12 @@ export function qqSegmentsToDiscord(
       case "rps":
       case "poke": {
         parts.push(`[QQ ${segment.type}]`);
+        break;
+      }
+      case "redbag":
+      case "gift":
+      case "basketball": {
+        parts.push(`[QQ ${segment.type}: ${summarizeSegmentData(segment.data)}]`);
         break;
       }
       default: {
@@ -697,6 +725,63 @@ function appendOneBotMedia(
   } else {
     parts.push(url ? `[QQ ${label}: ${url}]` : `[QQ ${label}]`);
   }
+}
+
+function summarizeKeyboardLabels(data: Record<string, string>): string | undefined {
+  const payload = firstValue(data.content, data.data, data.rows, data.buttons);
+  if (!payload) {
+    return firstValue(data.label, data.text, data.name);
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as unknown;
+    const labels = collectKeyboardLabels(parsed);
+    return labels.length > 0 ? truncateInline(labels.join(", "), 160) : undefined;
+  } catch {
+    return truncateInline(payload, 160);
+  }
+}
+
+function collectKeyboardLabels(value: unknown): string[] {
+  const labels: string[] = [];
+  const visit = (current: unknown): void => {
+    if (!current || labels.length >= 8) {
+      return;
+    }
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        visit(item);
+      }
+      return;
+    }
+
+    if (typeof current !== "object") {
+      return;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const key of ["label", "text", "name"]) {
+      const label = record[key];
+      if (typeof label === "string" && label.trim()) {
+        labels.push(label.trim());
+      }
+    }
+
+    for (const child of Object.values(record)) {
+      visit(child);
+    }
+  };
+
+  visit(value);
+  return [...new Set(labels)];
+}
+
+function summarizeSegmentData(data: Record<string, string>): string {
+  const values = Object.entries(data)
+    .filter(([, value]) => value.trim() !== "")
+    .map(([key, value]) => `${key}=${value}`);
+  return values.length > 0 ? truncateInline(values.join(", ")) : "payload omitted";
 }
 
 function extractForwardNodes(input: unknown): Array<Record<string, unknown>> {
