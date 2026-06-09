@@ -68,6 +68,14 @@ describe("OneBotClient", () => {
 
   it("sends delete and upload actions", async () => {
     const testServer = await createOneBotServer((socket, packet) => {
+      if (packet.action === "get_image") {
+        sendActionResponse(socket, packet.echo, { url: "https://example.com/image.png" });
+        return;
+      }
+      if (packet.action === "get_record") {
+        sendActionResponse(socket, packet.echo, { url: "https://example.com/voice.mp3" });
+        return;
+      }
       sendActionResponse(socket, packet.echo, {});
     });
     const client = createClient(testServer.url);
@@ -77,6 +85,12 @@ describe("OneBotClient", () => {
     await client.deleteMessage("9007199254740995");
     await client.uploadGroupFile("123", "https://example.com/file.zip", "file.zip");
     await client.getMessage("456");
+    await expect(client.getImage("image-file-id")).resolves.toEqual({
+      url: "https://example.com/image.png"
+    });
+    await expect(client.getRecord("voice-file-id")).resolves.toEqual({
+      url: "https://example.com/voice.mp3"
+    });
 
     expect(testServer.received).toMatchObject([
       { action: "get_login_info" },
@@ -92,6 +106,14 @@ describe("OneBotClient", () => {
       {
         action: "get_msg",
         params: { message_id: 456 }
+      },
+      {
+        action: "get_image",
+        params: { file: "image-file-id" }
+      },
+      {
+        action: "get_record",
+        params: { file: "voice-file-id", out_format: "mp3" }
       }
     ]);
   });

@@ -25,6 +25,7 @@ export interface AppConfig {
   bridgeMemberEvents: boolean;
   bridgeTypingIndicators: boolean;
   uploadQqFiles: boolean;
+  resolveQqMediaUrls: boolean;
   statusCommandEnabled: boolean;
   statusCommandName: string;
   statusCommandGuildIds: Set<string>;

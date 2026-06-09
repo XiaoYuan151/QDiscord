@@ -845,7 +845,9 @@ export class QDiscordBridge {
       return;
     }
 
-    const qqSegments = normalizeOneBotMessage(event.message ?? event.raw_message);
+    const qqSegments = await this.resolveOneBotMediaUrls(
+      normalizeOneBotMessage(event.message ?? event.raw_message)
+    );
     const converted = qqSegmentsToDiscord(qqSegments, {
       qqToDiscordUserMap: this.config.qqToDiscordUserMap,
       cqFaceEmojiMap: this.config.cqFaceEmojiMap
@@ -1028,6 +1030,56 @@ export class QDiscordBridge {
       metaEventType: event.meta_event_type,
       subType: event.sub_type
     });
+  }
+
+  private async resolveOneBotMediaUrls(segments: CqSegment[]): Promise<CqSegment[]> {
+    if (!this.config.resolveQqMediaUrls) {
+      return segments;
+    }
+
+    const resolvedSegments: CqSegment[] = [];
+    for (const segment of segments) {
+      resolvedSegments.push(await this.resolveOneBotMediaUrl(segment));
+    }
+    return resolvedSegments;
+  }
+
+  private async resolveOneBotMediaUrl(segment: CqSegment): Promise<CqSegment> {
+    if (segment.type !== "image" && segment.type !== "mface" && segment.type !== "record") {
+      return segment;
+    }
+
+    const file = firstString(segment.data.url, segment.data.file, segment.data.path);
+    if (!file || isHttpUrl(file)) {
+      return segment;
+    }
+
+    try {
+      await this.waitForOneBotConnection();
+      const media =
+        segment.type === "record"
+          ? await this.oneBot.getRecord(file)
+          : await this.oneBot.getImage(file);
+      const url = firstString(media.url, media.file, media.path);
+      if (!url || !isHttpUrl(url)) {
+        return segment;
+      }
+
+      return {
+        ...segment,
+        data: {
+          ...segment.data,
+          url
+        }
+      };
+    } catch (error) {
+      this.logger.warn("Failed to resolve QQ media URL", {
+        segmentType: segment.type,
+        file,
+        error
+      });
+      return segment;
+    }
   }
 
   private async createQqReplyFallback(qqMessageId: string): Promise<string> {
@@ -1853,6 +1905,15 @@ function firstString(...values: unknown[]): string | undefined {
   }
 
   return undefined;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function inferFileName(file: string | undefined): string | undefined {

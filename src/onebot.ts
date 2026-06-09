@@ -43,6 +43,13 @@ interface LoginInfo {
   nickname?: string;
 }
 
+export interface OneBotMediaData {
+  file?: string;
+  url?: string;
+  path?: string;
+  [key: string]: unknown;
+}
+
 export interface OneBotHeartbeatState {
   at: Date;
   online?: boolean;
@@ -162,6 +169,17 @@ export class OneBotClient extends EventEmitter {
   async getMessage(messageId: string): Promise<OneBotGetMessageData> {
     return this.sendAction("get_msg", {
       message_id: normalizeOneBotId(messageId)
+    });
+  }
+
+  async getImage(file: string): Promise<OneBotMediaData> {
+    return this.sendAction("get_image", { file });
+  }
+
+  async getRecord(file: string, outFormat = "mp3"): Promise<OneBotMediaData> {
+    return this.sendAction("get_record", {
+      file,
+      out_format: outFormat
     });
   }
 

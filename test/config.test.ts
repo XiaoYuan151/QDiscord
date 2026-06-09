@@ -17,6 +17,7 @@ describe("config", () => {
     expect(config.bridgeMemberEvents).toBe(true);
     expect(config.bridgeTypingIndicators).toBe(true);
     expect(config.uploadQqFiles).toBe(true);
+    expect(config.resolveQqMediaUrls).toBe(true);
     expect(config.statusCommandName).toBe("bridge");
     expect(config.statusCommandGuildIds.size).toBe(0);
     expect(config.statusCommandAllowedUserIds.size).toBe(0);
@@ -53,6 +54,7 @@ describe("config", () => {
       BRIDGE_TYPING_INDICATORS: "false",
       LOG_LEVEL: "debug",
       UPLOAD_QQ_FILES: "false",
+      RESOLVE_QQ_MEDIA_URLS: "false",
       QUEUE_MAX_PENDING: "50",
       QUEUE_MAX_RETRIES: "0",
       SHUTDOWN_DRAIN_TIMEOUT_MS: "0",
@@ -78,6 +80,7 @@ describe("config", () => {
     expect(config.bridgeTypingIndicators).toBe(false);
     expect(config.logLevel).toBe("debug");
     expect(config.uploadQqFiles).toBe(false);
+    expect(config.resolveQqMediaUrls).toBe(false);
     expect(config.queueMaxPending).toBe(50);
     expect(config.queueMaxRetries).toBe(0);
     expect(config.shutdownDrainTimeoutMs).toBe(0);
