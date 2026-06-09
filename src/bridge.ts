@@ -912,6 +912,10 @@ export class QDiscordBridge {
   }
 
   private async handleOneBotNotice(event: OneBotNoticeEvent): Promise<void> {
+    if (isOneBotNoticeBlocked(event, this.config.blockedQqUserIds)) {
+      return;
+    }
+
     if (event.notice_type === "group_recall" && event.message_id !== undefined) {
       const link = this.getLinkByQqMessageId(String(event.message_id));
       if (!link) {
@@ -925,10 +929,6 @@ export class QDiscordBridge {
       await this.deleteDiscordMessages(link.discordChannelId, messageLinkDiscordIds(link));
       this.forgetByQqMessageId(link.qqMessageId);
       this.persistMessageLinks();
-      return;
-    }
-
-    if (isOneBotNoticeBlocked(event, this.config.blockedQqUserIds)) {
       return;
     }
 
