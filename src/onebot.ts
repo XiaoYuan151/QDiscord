@@ -6,6 +6,7 @@ import WebSocket from "ws";
 import type {
   CqSegment,
   OneBotGetMessageData,
+  OneBotMetaEvent,
   OneBotMessageEvent,
   OneBotNoticeEvent,
   OneBotRequestEvent,
@@ -42,6 +43,18 @@ interface LoginInfo {
   nickname?: string;
 }
 
+export interface OneBotHeartbeatState {
+  at: Date;
+  online?: boolean;
+  good?: boolean;
+  intervalMs?: number;
+}
+
+export interface OneBotLifecycleState {
+  at: Date;
+  subType?: string;
+}
+
 export class OneBotClient extends EventEmitter {
   private readonly pending = new Map<string, PendingAction>();
   private ws?: WebSocket;
@@ -52,6 +65,8 @@ export class OneBotClient extends EventEmitter {
   private shouldReconnect = true;
   private selfQQIdValue?: string;
   private reconnectAttemptsValue = 0;
+  private lastHeartbeatValue?: OneBotHeartbeatState;
+  private lastLifecycleValue?: OneBotLifecycleState;
 
   constructor(private readonly options: OneBotClientOptions) {
     super();
@@ -71,6 +86,14 @@ export class OneBotClient extends EventEmitter {
 
   get reconnectAttempts(): number {
     return this.reconnectAttemptsValue;
+  }
+
+  get lastHeartbeat(): OneBotHeartbeatState | undefined {
+    return this.lastHeartbeatValue;
+  }
+
+  get lastLifecycle(): OneBotLifecycleState | undefined {
+    return this.lastLifecycleValue;
   }
 
   connect(): void {
@@ -230,9 +253,19 @@ export class OneBotClient extends EventEmitter {
   }
 
   private handlePacket(rawPacket: string): void {
-    let packet: OneBotActionResponse | OneBotMessageEvent | OneBotNoticeEvent | OneBotRequestEvent;
+    let packet:
+      | OneBotActionResponse
+      | OneBotMessageEvent
+      | OneBotNoticeEvent
+      | OneBotRequestEvent
+      | OneBotMetaEvent;
     try {
-      packet = JSON.parse(rawPacket) as OneBotActionResponse | OneBotMessageEvent;
+      packet = JSON.parse(rawPacket) as
+        | OneBotActionResponse
+        | OneBotMessageEvent
+        | OneBotNoticeEvent
+        | OneBotRequestEvent
+        | OneBotMetaEvent;
     } catch {
       this.emit("error", new Error(`Received invalid OneBot JSON: ${rawPacket}`));
       return;
@@ -253,6 +286,28 @@ export class OneBotClient extends EventEmitter {
     if ((packet as OneBotRequestEvent).post_type === "request") {
       this.emit("request", packet as OneBotRequestEvent);
     }
+    if ((packet as OneBotMetaEvent).post_type === "meta_event") {
+      this.handleMetaEvent(packet as OneBotMetaEvent);
+    }
+  }
+
+  private handleMetaEvent(event: OneBotMetaEvent): void {
+    const at = oneBotEventDate(event);
+    if (event.meta_event_type === "heartbeat") {
+      this.lastHeartbeatValue = {
+        at,
+        online: event.status?.online,
+        good: event.status?.good,
+        intervalMs: parseOptionalInteger(event.interval)
+      };
+    } else if (event.meta_event_type === "lifecycle") {
+      this.lastLifecycleValue = {
+        at,
+        subType: event.sub_type
+      };
+    }
+
+    this.emit("meta", event);
   }
 
   private resolvePendingAction(packet: OneBotActionResponse): void {
@@ -371,4 +426,22 @@ function normalizeOneBotId(id: string): string | number {
 
   const asNumber = Number(id);
   return Number.isSafeInteger(asNumber) ? asNumber : id;
+}
+
+function oneBotEventDate(event: { time?: number | string }): Date {
+  const timestamp = Number(event.time);
+  if (Number.isFinite(timestamp) && timestamp > 0) {
+    return new Date(timestamp * 1000);
+  }
+
+  return new Date();
+}
+
+function parseOptionalInteger(input: number | string | undefined): number | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  const value = Number(input);
+  return Number.isInteger(value) ? value : undefined;
 }

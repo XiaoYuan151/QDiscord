@@ -49,6 +49,7 @@ import type {
   BridgeRuntimeStatus,
   BridgePair,
   CqSegment,
+  OneBotMetaEvent,
   OneBotMessageEvent,
   OneBotNoticeEvent,
   OneBotRequestEvent,
@@ -196,7 +197,21 @@ export class QDiscordBridge {
         connected: this.oneBot.connected,
         connecting: this.oneBot.connecting,
         selfQQId: this.oneBot.selfQQId,
-        reconnectAttempts: this.oneBot.reconnectAttempts
+        reconnectAttempts: this.oneBot.reconnectAttempts,
+        lastHeartbeat: this.oneBot.lastHeartbeat
+          ? {
+              at: this.oneBot.lastHeartbeat.at.toISOString(),
+              online: this.oneBot.lastHeartbeat.online,
+              good: this.oneBot.lastHeartbeat.good,
+              intervalMs: this.oneBot.lastHeartbeat.intervalMs
+            }
+          : undefined,
+        lastLifecycle: this.oneBot.lastLifecycle
+          ? {
+              at: this.oneBot.lastLifecycle.at.toISOString(),
+              subType: this.oneBot.lastLifecycle.subType
+            }
+          : undefined
       },
       queues: {
         [this.discordToQqQueue.name]: this.discordToQqQueue.stats(),
@@ -377,6 +392,10 @@ export class QDiscordBridge {
         `qq-request:${data.request_type}:${data.group_id ?? "unknown"}:${data.user_id ?? "unknown"}`,
         () => this.handleOneBotRequest(data)
       );
+    });
+
+    this.oneBot.on("meta", (event) => {
+      this.handleOneBotMetaEvent(event as OneBotMetaEvent);
     });
 
     this.oneBot.on("error", (error) => {
@@ -987,6 +1006,30 @@ export class QDiscordBridge {
     await this.sendDiscordSystemMessage(pair.discordChannelId, formatOneBotGroupRequest(event));
   }
 
+  private handleOneBotMetaEvent(event: OneBotMetaEvent): void {
+    if (event.meta_event_type === "heartbeat") {
+      this.logger.debug("NapCat heartbeat received", {
+        online: event.status?.online,
+        good: event.status?.good,
+        interval: event.interval
+      });
+      return;
+    }
+
+    if (event.meta_event_type === "lifecycle") {
+      this.logger.info("NapCat lifecycle event received", {
+        subType: event.sub_type ?? "unknown",
+        selfId: event.self_id ?? "unknown"
+      });
+      return;
+    }
+
+    this.logger.debug("NapCat meta event received", {
+      metaEventType: event.meta_event_type,
+      subType: event.sub_type
+    });
+  }
+
   private async createQqReplyFallback(qqMessageId: string): Promise<string> {
     try {
       await this.waitForOneBotConnection();
@@ -1578,6 +1621,12 @@ function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
   return [
     `Discord: ${status.discord.ready ? "ready" : "not ready"} (${status.discord.userTag ?? "unknown"})`,
     `QQ: ${status.oneBot.connected ? "connected" : status.oneBot.connecting ? "connecting" : "disconnected"} (${status.oneBot.selfQQId ?? "unknown"})`,
+    status.oneBot.lastHeartbeat
+      ? `QQ heartbeat: ${status.oneBot.lastHeartbeat.good === false ? "degraded" : "ok"} at ${status.oneBot.lastHeartbeat.at}`
+      : undefined,
+    status.oneBot.lastLifecycle
+      ? `QQ lifecycle: ${status.oneBot.lastLifecycle.subType ?? "unknown"} at ${status.oneBot.lastLifecycle.at}`
+      : undefined,
     `Bridge pairs: ${status.bridgePairs}`,
     `Tracked links: ${status.messageLinks.tracked}/${status.messageLinks.maxEntries}`,
     `Uptime: ${status.uptimeSeconds}s`,

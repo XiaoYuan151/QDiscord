@@ -110,6 +110,21 @@ export interface OneBotRequestEvent {
   [key: string]: unknown;
 }
 
+export interface OneBotMetaEvent {
+  post_type: "meta_event";
+  meta_event_type: string;
+  sub_type?: string;
+  time?: number | string;
+  self_id?: number | string;
+  interval?: number | string;
+  status?: {
+    online?: boolean;
+    good?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 export interface OneBotSendMessageData {
   message_id?: number | string;
 }
@@ -141,6 +156,16 @@ export interface BridgeRuntimeStatus {
     connecting: boolean;
     selfQQId?: string;
     reconnectAttempts: number;
+    lastHeartbeat?: {
+      at: string;
+      online?: boolean;
+      good?: boolean;
+      intervalMs?: number;
+    };
+    lastLifecycle?: {
+      at: string;
+      subType?: string;
+    };
   };
   queues: Record<
     string,

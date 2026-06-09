@@ -96,7 +96,7 @@ describe("OneBotClient", () => {
     ]);
   });
 
-  it("emits message, notice, and request events from OneBot packets", async () => {
+  it("emits message, notice, request, and meta events from OneBot packets", async () => {
     const testServer = await createOneBotServer((socket, packet) => {
       if (packet.action === "get_login_info") {
         sendActionResponse(socket, packet.echo, { user_id: 1 });
@@ -127,21 +127,63 @@ describe("OneBotClient", () => {
             comment: "hello"
           })
         );
+        socket.send(
+          JSON.stringify({
+            post_type: "meta_event",
+            meta_event_type: "lifecycle",
+            sub_type: "connect",
+            self_id: 1,
+            time: 1_800_000_000
+          })
+        );
+        socket.send(
+          JSON.stringify({
+            post_type: "meta_event",
+            meta_event_type: "heartbeat",
+            status: { online: true, good: true },
+            interval: 5000,
+            time: 1_800_000_001
+          })
+        );
       }
     });
     const client = createClient(testServer.url);
     const messageEvent = once(client, "message");
     const noticeEvent = once(client, "notice");
     const requestEvent = once(client, "request");
+    const metaEvents: unknown[] = [];
+    const metaEventsReceived = new Promise<void>((resolve) => {
+      client.on("meta", (event) => {
+        metaEvents.push(event);
+        if (metaEvents.length === 2) {
+          resolve();
+        }
+      });
+    });
 
     client.connect();
     const [message] = await messageEvent;
     const [notice] = await noticeEvent;
     const [request] = await requestEvent;
+    await metaEventsReceived;
 
     expect(message).toMatchObject({ post_type: "message", message_id: 456 });
     expect(notice).toMatchObject({ post_type: "notice", notice_type: "group_recall" });
     expect(request).toMatchObject({ post_type: "request", request_type: "group" });
+    expect(metaEvents).toMatchObject([
+      { post_type: "meta_event", meta_event_type: "lifecycle", sub_type: "connect" },
+      { post_type: "meta_event", meta_event_type: "heartbeat" }
+    ]);
+    expect(client.lastLifecycle).toEqual({
+      at: new Date("2027-01-15T08:00:00.000Z"),
+      subType: "connect"
+    });
+    expect(client.lastHeartbeat).toEqual({
+      at: new Date("2027-01-15T08:00:01.000Z"),
+      online: true,
+      good: true,
+      intervalMs: 5000
+    });
   });
 
   it("schedules bounded reconnects after close", async () => {
