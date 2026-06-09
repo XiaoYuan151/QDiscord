@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatStatusForDiscord,
   formatOneBotGroupUpload,
+  formatOneBotGroupMemberNotice,
   formatOneBotGroupNotice,
   formatOneBotGroupRequest,
   isOneBotNoticeBlocked,
@@ -242,6 +243,51 @@ describe("OneBot group notice formatting", () => {
     ).toBe("[QQ honor] User 200 received talkative in group 100");
   });
 
+  it("formats QQ member join and leave notices", () => {
+    expect(
+      formatOneBotGroupMemberNotice({
+        post_type: "notice",
+        notice_type: "group_increase",
+        sub_type: "approve",
+        group_id: 100,
+        user_id: 200,
+        operator_id: 300
+      })
+    ).toBe("[QQ member] User 200 joined group 100 by operator 300");
+
+    expect(
+      formatOneBotGroupMemberNotice({
+        post_type: "notice",
+        notice_type: "group_increase",
+        sub_type: "invite",
+        group_id: 100,
+        user_id: 200,
+        operator_id: 300
+      })
+    ).toBe("[QQ member] User 200 was invited to group 100 by operator 300");
+
+    expect(
+      formatOneBotGroupMemberNotice({
+        post_type: "notice",
+        notice_type: "group_decrease",
+        sub_type: "leave",
+        group_id: 100,
+        user_id: 200
+      })
+    ).toBe("[QQ member] User 200 left group 100");
+
+    expect(
+      formatOneBotGroupMemberNotice({
+        post_type: "notice",
+        notice_type: "group_decrease",
+        sub_type: "kick",
+        group_id: 100,
+        user_id: 200,
+        operator_id: 300
+      })
+    ).toBe("[QQ member] User 200 was removed from group 100 by operator 300");
+  });
+
   it("ignores group notices that have dedicated bridge handling", () => {
     const upload: OneBotNoticeEvent = {
       post_type: "notice",
@@ -249,8 +295,15 @@ describe("OneBot group notice formatting", () => {
       group_id: 100,
       user_id: 200
     };
+    const memberIncrease: OneBotNoticeEvent = {
+      post_type: "notice",
+      notice_type: "group_increase",
+      group_id: 100,
+      user_id: 200
+    };
 
     expect(formatOneBotGroupNotice(upload)).toBeUndefined();
+    expect(formatOneBotGroupNotice(memberIncrease)).toBeUndefined();
   });
 });
 

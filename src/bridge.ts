@@ -994,6 +994,23 @@ export class QDiscordBridge {
       return;
     }
 
+    if (
+      this.config.bridgeMemberEvents &&
+      event.group_id !== undefined &&
+      (event.notice_type === "group_increase" || event.notice_type === "group_decrease")
+    ) {
+      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+      if (!pair || pair.direction === "discord-to-qq") {
+        return;
+      }
+
+      const content = formatOneBotGroupMemberNotice(event);
+      if (content) {
+        await this.sendDiscordSystemMessage(pair.discordChannelId, content);
+      }
+      return;
+    }
+
     if (event.group_id !== undefined) {
       const content = formatOneBotGroupNotice(event);
       if (content) {
@@ -1005,22 +1022,6 @@ export class QDiscordBridge {
         await this.sendDiscordSystemMessage(pair.discordChannelId, content);
         return;
       }
-    }
-
-    if (
-      this.config.bridgeMemberEvents &&
-      event.group_id !== undefined &&
-      (event.notice_type === "group_increase" || event.notice_type === "group_decrease")
-    ) {
-      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-      if (!pair || pair.direction === "discord-to-qq") {
-        return;
-      }
-      const discordChannelId = pair.discordChannelId;
-
-      const action = event.notice_type === "group_increase" ? "joined" : "left";
-      const content = `[QQ] User ${event.user_id ?? "unknown"} ${action} group ${event.group_id}`;
-      await this.sendDiscordSystemMessage(discordChannelId, content);
     }
   }
 
@@ -2015,6 +2016,36 @@ export function formatOneBotGroupNotice(event: OneBotNoticeEvent): string | unde
   }
 
   return undefined;
+}
+
+export function formatOneBotGroupMemberNotice(event: OneBotNoticeEvent): string | undefined {
+  if (event.notice_type !== "group_increase" && event.notice_type !== "group_decrease") {
+    return undefined;
+  }
+
+  const groupId = event.group_id ?? "unknown";
+  const userId = event.user_id ?? "unknown";
+  const operatorId = firstString(event.operator_id);
+  const operator = operatorId ? ` by operator ${operatorId}` : "";
+  const subType = firstString(event.sub_type, event.action)?.toLowerCase() ?? "";
+
+  if (event.notice_type === "group_increase") {
+    if (subType === "invite") {
+      return `[QQ member] User ${userId} was invited to group ${groupId}${operator}`;
+    }
+
+    return `[QQ member] User ${userId} joined group ${groupId}${operator}`;
+  }
+
+  if (subType === "kick_me") {
+    return `[QQ member] Bot was removed from group ${groupId}${operator}`;
+  }
+
+  if (subType === "kick") {
+    return `[QQ member] User ${userId} was removed from group ${groupId}${operator}`;
+  }
+
+  return `[QQ member] User ${userId} left group ${groupId}`;
 }
 
 export function formatOneBotGroupRequest(event: OneBotRequestEvent): string {
