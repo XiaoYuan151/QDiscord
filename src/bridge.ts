@@ -1753,7 +1753,9 @@ export function isOneBotNoticeBlocked(
   event: OneBotNoticeEvent,
   blockedQqUserIds: Set<string>
 ): boolean {
-  return event.user_id !== undefined && blockedQqUserIds.has(String(event.user_id));
+  return [event.user_id, event.operator_id, event.target_id].some(
+    (id) => id !== undefined && id !== null && blockedQqUserIds.has(String(id))
+  );
 }
 
 export function isOneBotRequestBlocked(

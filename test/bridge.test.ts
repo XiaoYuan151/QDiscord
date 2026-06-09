@@ -483,6 +483,35 @@ describe("OneBot notice filtering", () => {
       )
     ).toBe(false);
   });
+
+  it("blocks notices involving configured QQ operator or target ids", () => {
+    expect(
+      isOneBotNoticeBlocked(
+        {
+          post_type: "notice",
+          notice_type: "group_ban",
+          group_id: 100,
+          user_id: 201,
+          operator_id: 200
+        },
+        new Set(["200"])
+      )
+    ).toBe(true);
+
+    expect(
+      isOneBotNoticeBlocked(
+        {
+          post_type: "notice",
+          notice_type: "notify",
+          sub_type: "poke",
+          group_id: 100,
+          user_id: 201,
+          target_id: 200
+        },
+        new Set(["200"])
+      )
+    ).toBe(true);
+  });
 });
 
 describe("OneBot group request formatting", () => {
