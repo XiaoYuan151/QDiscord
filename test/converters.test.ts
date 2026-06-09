@@ -616,10 +616,20 @@ describe("Discord to QQ conversion", () => {
       qqReactionToDiscordContent(
         { action: "removed", emojiId: "14", userId: "123" },
         {
-          qqToDiscordUserMap: new Map(),
+          qqToDiscordUserMap: new Map([["123", "999"]]),
           cqFaceEmojiMap: new Map([["14", "🙂"]])
         }
       )
-    ).toBe("[QQ reaction] User 123 removed 🙂");
+    ).toBe("[QQ reaction] <@999> removed 🙂");
+
+    expect(
+      qqReactionToDiscordContent(
+        { action: "added", emojiId: "99", userId: "456" },
+        {
+          qqToDiscordUserMap: new Map(),
+          cqFaceEmojiMap: new Map()
+        }
+      )
+    ).toBe("[QQ reaction] User 456 added [QQ face 99]");
   });
 });

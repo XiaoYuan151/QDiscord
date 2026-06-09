@@ -442,7 +442,11 @@ export function qqReactionToDiscordContent(
     input.emojiId && options.cqFaceEmojiMap.has(input.emojiId)
       ? options.cqFaceEmojiMap.get(input.emojiId)
       : `[QQ face ${input.emojiId ?? "unknown"}]`;
-  return `[QQ reaction] User ${input.userId ?? "unknown"} ${input.action} ${emoji}`;
+  const userLabel =
+    input.userId && options.qqToDiscordUserMap.has(input.userId)
+      ? `<@${options.qqToDiscordUserMap.get(input.userId)}>`
+      : `User ${input.userId ?? "unknown"}`;
+  return `[QQ reaction] ${userLabel} ${input.action} ${emoji}`;
 }
 
 export function discordTextToQqSegments(text: string, options: DiscordTextToQqOptions): CqSegment[] {
