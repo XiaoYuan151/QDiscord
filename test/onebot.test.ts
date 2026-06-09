@@ -76,6 +76,12 @@ describe("OneBotClient", () => {
         sendActionResponse(socket, packet.echo, { url: "https://example.com/voice.mp3" });
         return;
       }
+      if (packet.action === "get_forward_msg") {
+        sendActionResponse(socket, packet.echo, {
+          messages: [{ sender: { nickname: "Alice" }, content: "hello" }]
+        });
+        return;
+      }
       sendActionResponse(socket, packet.echo, {});
     });
     const client = createClient(testServer.url);
@@ -90,6 +96,9 @@ describe("OneBotClient", () => {
     });
     await expect(client.getRecord("voice-file-id")).resolves.toEqual({
       url: "https://example.com/voice.mp3"
+    });
+    await expect(client.getForwardMessage("forward-id")).resolves.toEqual({
+      messages: [{ sender: { nickname: "Alice" }, content: "hello" }]
     });
 
     expect(testServer.received).toMatchObject([
@@ -114,6 +123,10 @@ describe("OneBotClient", () => {
       {
         action: "get_record",
         params: { file: "voice-file-id", out_format: "mp3" }
+      },
+      {
+        action: "get_forward_msg",
+        params: { id: "forward-id" }
       }
     ]);
   });

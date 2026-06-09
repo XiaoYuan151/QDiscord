@@ -11,6 +11,7 @@ import {
   discordTextToQqSegments,
   formatDiscordReplyFallback,
   formatQqReplyFallback,
+  oneBotForwardMessageToSegments,
   qqReactionToDiscordContent,
   qqSegmentsToDiscord,
   splitDiscordContent
@@ -108,6 +109,35 @@ describe("QQ to Discord conversion", () => {
     expect(result.content).toBe(
       "[QQ json: [Share] Example | Title | Description][QQ xml: XML Title XML Summary]"
     );
+  });
+
+  it("flattens QQ forwarded messages into Discord-readable content and files", () => {
+    const segments = oneBotForwardMessageToSegments({
+      messages: [
+        {
+          sender: { nickname: "Alice", user_id: 123 },
+          content: [
+            { type: "text", data: { text: "hello" } },
+            { type: "image", data: { url: "https://example.com/a.png" } }
+          ]
+        },
+        {
+          type: "node",
+          data: {
+            name: "Bob",
+            content: "[CQ:record,url=https://example.com/voice.ogg]"
+          }
+        }
+      ]
+    });
+
+    const result = qqSegmentsToDiscord(segments, {
+      qqToDiscordUserMap: new Map(),
+      cqFaceEmojiMap: new Map()
+    });
+
+    expect(result.content).toBe("[QQ forwarded message]\n1. Alice: hello\n2. Bob:");
+    expect(result.files).toEqual(["https://example.com/a.png", "https://example.com/voice.ogg"]);
   });
 });
 

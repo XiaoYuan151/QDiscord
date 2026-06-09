@@ -36,6 +36,7 @@ import {
   type DiscordPollLike,
   formatDiscordReplyFallback,
   formatQqReplyFallback,
+  oneBotForwardMessageToSegments,
   qqReactionToDiscordContent,
   qqSegmentsToDiscord,
   splitDiscordContent
@@ -846,9 +847,10 @@ export class QDiscordBridge {
       return;
     }
 
-    const qqSegments = await this.resolveOneBotMediaUrls(
+    const forwardedSegments = await this.resolveOneBotForwardMessages(
       normalizeOneBotMessage(event.message ?? event.raw_message)
     );
+    const qqSegments = await this.resolveOneBotMediaUrls(forwardedSegments);
     const converted = qqSegmentsToDiscord(qqSegments, {
       qqToDiscordUserMap: this.config.qqToDiscordUserMap,
       cqFaceEmojiMap: this.config.cqFaceEmojiMap
@@ -1031,6 +1033,40 @@ export class QDiscordBridge {
       metaEventType: event.meta_event_type,
       subType: event.sub_type
     });
+  }
+
+  private async resolveOneBotForwardMessages(segments: CqSegment[]): Promise<CqSegment[]> {
+    const resolvedSegments: CqSegment[] = [];
+    for (const segment of segments) {
+      if (segment.type !== "forward") {
+        resolvedSegments.push(segment);
+        continue;
+      }
+
+      const forwardId = firstString(segment.data.id, segment.data.file);
+      if (!forwardId) {
+        resolvedSegments.push(segment);
+        continue;
+      }
+
+      try {
+        await this.waitForOneBotConnection();
+        const forwardMessage = await this.oneBot.getForwardMessage(forwardId);
+        resolvedSegments.push(
+          ...oneBotForwardMessageToSegments(forwardMessage, {
+            forwardId
+          })
+        );
+      } catch (error) {
+        this.logger.warn("Failed to resolve QQ forwarded message", {
+          forwardId,
+          error
+        });
+        resolvedSegments.push(segment);
+      }
+    }
+
+    return resolvedSegments;
   }
 
   private async resolveOneBotMediaUrls(segments: CqSegment[]): Promise<CqSegment[]> {

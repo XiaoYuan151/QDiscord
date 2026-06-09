@@ -1,5 +1,5 @@
-import { appendTextSegment } from "./cq.js";
-import type { CqSegment } from "./types.js";
+import { appendTextSegment, normalizeOneBotMessage } from "./cq.js";
+import type { CqSegment, OneBotMessagePayload } from "./types.js";
 
 export interface QqToDiscordOptions {
   qqToDiscordUserMap: Map<string, string>;
@@ -124,6 +124,11 @@ export interface QqReplyPreviewLike {
   fileCount?: number;
 }
 
+export interface OneBotForwardMessageToSegmentsOptions {
+  forwardId?: string;
+  maxNodes?: number;
+}
+
 export function qqSegmentsToDiscord(
   segments: CqSegment[],
   options: QqToDiscordOptions
@@ -231,6 +236,41 @@ export function qqSegmentsToDiscord(
     mentionEveryone,
     replyToMessageId
   };
+}
+
+export function oneBotForwardMessageToSegments(
+  input: unknown,
+  options: OneBotForwardMessageToSegmentsOptions = {}
+): CqSegment[] {
+  const nodes = extractForwardNodes(input);
+  if (nodes.length === 0) {
+    return [
+      {
+        type: "text",
+        data: { text: `[QQ forwarded message${options.forwardId ? ` ${options.forwardId}` : ""}]` }
+      }
+    ];
+  }
+
+  const maxNodes = options.maxNodes ?? 10;
+  const segments: CqSegment[] = [];
+  appendTextSegment(segments, "[QQ forwarded message]");
+  for (const [index, node] of nodes.slice(0, maxNodes).entries()) {
+    appendTextSegment(segments, `\n${index + 1}. ${forwardNodeSenderLabel(node)}: `);
+    const contentSegments = forwardNodeContentSegments(node);
+    if (contentSegments.length > 0) {
+      appendSegments(segments, contentSegments);
+    } else {
+      appendTextSegment(segments, "[empty]");
+    }
+  }
+
+  const remaining = nodes.length - maxNodes;
+  if (remaining > 0) {
+    appendTextSegment(segments, `\n... ${remaining} more forwarded message(s)`);
+  }
+
+  return segments;
 }
 
 export function discordMessageToQqSegments(
@@ -657,6 +697,83 @@ function appendOneBotMedia(
   } else {
     parts.push(url ? `[QQ ${label}: ${url}]` : `[QQ ${label}]`);
   }
+}
+
+function extractForwardNodes(input: unknown): Array<Record<string, unknown>> {
+  const root = isRecord(input) && isRecord(input.data) ? input.data : input;
+  const nodes = Array.isArray(root)
+    ? root
+    : isRecord(root) && Array.isArray(root.messages)
+      ? root.messages
+      : undefined;
+
+  return nodes?.filter(isRecord) ?? [];
+}
+
+function forwardNodeData(node: Record<string, unknown>): Record<string, unknown> {
+  return node.type === "node" && isRecord(node.data) ? node.data : node;
+}
+
+function forwardNodeSenderLabel(node: Record<string, unknown>): string {
+  const data = forwardNodeData(node);
+  const sender = isRecord(data.sender) ? data.sender : undefined;
+  return (
+    firstUnknownString(
+      data.name,
+      data.nickname,
+      sender?.card,
+      sender?.nickname,
+      sender?.user_id,
+      data.uin,
+      data.user_id
+    ) ?? "unknown"
+  );
+}
+
+function forwardNodeContentSegments(node: Record<string, unknown>): CqSegment[] {
+  const data = forwardNodeData(node);
+  return normalizeForwardContent(data.content ?? data.message ?? data.raw_message);
+}
+
+function normalizeForwardContent(content: unknown): CqSegment[] {
+  if (typeof content === "string") {
+    return normalizeOneBotMessage(content);
+  }
+
+  if (isOneBotMessageSegmentArray(content)) {
+    return normalizeOneBotMessage(content);
+  }
+
+  const text = isRecord(content)
+    ? firstUnknownString(content.text, content.content, content.summary)
+    : firstUnknownString(content);
+  return text ? [{ type: "text", data: { text } }] : [];
+}
+
+function isOneBotMessageSegmentArray(input: unknown): input is Exclude<OneBotMessagePayload, string> {
+  return (
+    Array.isArray(input) &&
+    input.every(
+      (segment) =>
+        isRecord(segment) &&
+        typeof segment.type === "string" &&
+        (segment.data === undefined || isRecord(segment.data))
+    )
+  );
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+function firstUnknownString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value);
+    }
+  }
+
+  return undefined;
 }
 
 function appendTextWithEmojiMapping(

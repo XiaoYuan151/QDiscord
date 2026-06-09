@@ -52,6 +52,11 @@ export interface OneBotMediaData {
   [key: string]: unknown;
 }
 
+export interface OneBotForwardMessageData {
+  messages?: unknown[];
+  [key: string]: unknown;
+}
+
 export interface OneBotHeartbeatState {
   at: Date;
   online?: boolean;
@@ -183,6 +188,10 @@ export class OneBotClient extends EventEmitter {
       file,
       out_format: outFormat
     });
+  }
+
+  async getForwardMessage(forwardId: string): Promise<OneBotForwardMessageData> {
+    return this.sendAction("get_forward_msg", { id: forwardId });
   }
 
   async sendAction<T = unknown>(action: string, params: Record<string, unknown> = {}): Promise<T> {
