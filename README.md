@@ -162,6 +162,8 @@ By default, `/bridge status` is limited to members with Manage Server. To allow 
 STATUS_COMMAND_ALLOWED_USER_IDS=111111111111111111,222222222222222222
 ```
 
+If `ALLOWED_DISCORD_GUILD_IDS` is set, `/bridge status` is also rejected outside those guilds.
+
 Generic Discord file attachments use NapCat's `upload_group_file` action by default:
 
 ```bash
@@ -185,6 +187,7 @@ BLOCKED_QQ_USER_IDS=
 ```
 
 These filters apply to bridged messages and supported system notices.
+Discord channel and QQ group allow-lists are enforced in both directions. For Discord thread messages, either the thread ID or its configured parent channel ID can pass `ALLOWED_DISCORD_CHANNEL_IDS`.
 
 `ALLOW_EVERYONE_MENTIONS=false` is the safe default. QQ `@all` is rendered visibly in Discord, but Discord mentions are restricted with `allowedMentions` unless you explicitly enable broad pings.
 
