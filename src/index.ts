@@ -10,6 +10,7 @@ const healthServer = new HealthServer({
   enabled: config.healthEnabled,
   host: config.healthHost,
   port: config.healthPort,
+  statusToken: config.healthStatusToken,
   getStatus: () => bridge.getStatus(),
   logger
 });

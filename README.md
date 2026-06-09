@@ -131,11 +131,14 @@ Local health endpoints are enabled by default:
 ```bash
 HEALTH_HOST=127.0.0.1
 HEALTH_PORT=8787
+HEALTH_STATUS_TOKEN=
 ```
 
 - `GET /healthz`: process liveness
-- `GET /readyz`: Discord and NapCat readiness
+- `GET /readyz`: Discord and NapCat readiness without route details
 - `GET /status`: structured bridge status
+
+Detailed `/status` is unauthenticated only when `HEALTH_HOST` is loopback (`127.0.0.1`, `localhost`, or `::1`). If you bind the health server to a non-loopback address, set `HEALTH_STATUS_TOKEN` and send `Authorization: Bearer <token>` with status requests.
 
 The Discord bot registers `/bridge status` by default. Change `STATUS_COMMAND_NAME` if that command name conflicts. Leave `STATUS_COMMAND_GUILD_IDS` empty for a global command, or set guild IDs for immediate guild-scoped registration:
 

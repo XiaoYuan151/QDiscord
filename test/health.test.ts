@@ -57,7 +57,7 @@ describe("HealthServer", () => {
       });
       await expect(fetchJson(`${baseUrl}/readyz`)).resolves.toMatchObject({
         status: 503,
-        body: { ok: false }
+        body: { ok: false, discord: false, oneBot: false }
       });
       await expect(fetchJson(`${baseUrl}/status`)).resolves.toMatchObject({
         status: 200,
@@ -70,10 +70,72 @@ describe("HealthServer", () => {
       await server.stop();
     }
   });
+
+  it("blocks detailed status on non-loopback hosts without a token", async () => {
+    const server = new HealthServer({
+      enabled: true,
+      host: "0.0.0.0",
+      port: 0,
+      getStatus: () => status(),
+      logger: createLogger("silent")
+    });
+
+    await server.start();
+    try {
+      const address = server.address();
+      const baseUrl = `http://127.0.0.1:${address?.port}`;
+
+      await expect(fetchJson(`${baseUrl}/readyz`)).resolves.toEqual({
+        status: 503,
+        body: { ok: false, discord: false, oneBot: false }
+      });
+      await expect(fetchJson(`${baseUrl}/status`)).resolves.toEqual({
+        status: 403,
+        body: { error: "status_token_required" }
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("requires the configured status token for detailed status", async () => {
+    const server = new HealthServer({
+      enabled: true,
+      host: "0.0.0.0",
+      port: 0,
+      statusToken: "status-secret",
+      getStatus: () => status(),
+      logger: createLogger("silent")
+    });
+
+    await server.start();
+    try {
+      const address = server.address();
+      const baseUrl = `http://127.0.0.1:${address?.port}`;
+
+      await expect(fetchJson(`${baseUrl}/status`)).resolves.toEqual({
+        status: 401,
+        body: { error: "unauthorized" }
+      });
+      await expect(
+        fetchJson(`${baseUrl}/status`, {
+          headers: { authorization: "Bearer status-secret" }
+        })
+      ).resolves.toMatchObject({
+        status: 200,
+        body: { routes: [{ discordChannelId: "111", qqGroupId: "222", direction: "both" }] }
+      });
+    } finally {
+      await server.stop();
+    }
+  });
 });
 
-async function fetchJson(url: string): Promise<{ status: number; body: unknown }> {
-  const response = await fetch(url);
+async function fetchJson(
+  url: string,
+  init?: RequestInit
+): Promise<{ status: number; body: unknown }> {
+  const response = await fetch(url, init);
   return {
     status: response.status,
     body: await response.json()

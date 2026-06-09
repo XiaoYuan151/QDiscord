@@ -21,6 +21,7 @@ describe("config", () => {
     expect(config.statusCommandGuildIds.size).toBe(0);
     expect(config.statusCommandAllowedUserIds.size).toBe(0);
     expect(config.healthPort).toBe(8787);
+    expect(config.healthStatusToken).toBeUndefined();
     expect(config.napcatReconnectInitialMs).toBe(1000);
     expect(config.napcatReconnectMaxMs).toBe(30000);
     expect(config.napcatHeartbeatIntervalMs).toBe(30000);
@@ -58,7 +59,8 @@ describe("config", () => {
       MESSAGE_LINK_TTL_MS: "5000",
       MESSAGE_LINK_MAX_ENTRIES: "100",
       MESSAGE_LINK_STORE_PATH: ".links.json",
-      HEALTH_PORT: "0"
+      HEALTH_PORT: "0",
+      HEALTH_STATUS_TOKEN: "status-secret"
     });
 
     expect(config.qqToDiscordUserMap.get("1")).toBe("2");
@@ -83,6 +85,7 @@ describe("config", () => {
     expect(config.messageLinkMaxEntries).toBe(100);
     expect(config.messageLinkStorePath).toBe(".links.json");
     expect(config.healthPort).toBe(0);
+    expect(config.healthStatusToken).toBe("status-secret");
     expect(config.discordChannelToBridgePair.get("111")?.direction).toBe("discord-to-qq");
     expect(config.qqGroupToBridgePair.get("222")?.direction).toBe("discord-to-qq");
   });
@@ -145,6 +148,13 @@ describe("config", () => {
         NAPCAT_ACCESS_TOKEN: "changeme"
       })
     ).toThrow("NAPCAT_ACCESS_TOKEN must be set to a real secret");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        HEALTH_STATUS_TOKEN: "example"
+      })
+    ).toThrow("HEALTH_STATUS_TOKEN must be set to a real secret");
   });
 
   it("rejects invalid NapCat WebSocket URLs", () => {

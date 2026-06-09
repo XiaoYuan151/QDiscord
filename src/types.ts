@@ -48,6 +48,7 @@ export interface AppConfig {
   healthEnabled: boolean;
   healthHost: string;
   healthPort: number;
+  healthStatusToken?: string;
   logLevel: LogLevel;
   allowedDiscordChannelIds: Set<string>;
   blockedDiscordUserIds: Set<string>;
