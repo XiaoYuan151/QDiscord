@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatStatusForDiscord,
+  formatOneBotGroupUpload,
   formatOneBotGroupNotice,
   formatOneBotGroupRequest,
   isOneBotNoticeBlocked,
   isOneBotRequestBlocked,
   isStatusCommandAuthorized,
   normalizeMessageLink,
+  oneBotGroupUploadFileRequest,
   resolveDiscordBridgeRoute
 } from "../src/bridge.js";
 import type {
@@ -158,6 +160,29 @@ describe("Discord bridge route resolution", () => {
 });
 
 describe("OneBot group notice formatting", () => {
+  it("formats QQ upload notices and extracts file URL lookup data", () => {
+    const event: OneBotNoticeEvent = {
+      post_type: "notice",
+      notice_type: "group_upload",
+      group_id: 100,
+      user_id: 200,
+      file: {
+        id: "file-id",
+        busid: 102,
+        name: "report.zip",
+        size: 2048
+      }
+    };
+
+    expect(formatOneBotGroupUpload(event)).toBe(
+      "[QQ file upload] User 200 uploaded report.zip (2.0 KB)"
+    );
+    expect(oneBotGroupUploadFileRequest(event)).toEqual({
+      fileId: "file-id",
+      busid: "102"
+    });
+  });
+
   it("formats QQ admin and mute notices", () => {
     expect(
       formatOneBotGroupNotice({

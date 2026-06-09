@@ -23,7 +23,7 @@ It supports:
 - NapCat lifecycle and heartbeat tracking in health/status output
 - QQ forwarded message snapshots to Discord text/media summaries via `get_forward_msg`
 - QQ rich utility segments such as contact cards, TTS, markdown, keyboard, gift, redbag, and basketball to readable Discord summaries
-- QQ group upload, admin, mute, poke, lucky king, and honor notices to Discord
+- QQ group upload notices with file URL attachments when resolvable, plus admin, mute, poke, lucky king, and honor notices to Discord
 - QQ group join/invite requests to Discord system messages
 - Join/leave notices, best-effort QQ typing notices, queue retries, health endpoints, and `/bridge status`
 

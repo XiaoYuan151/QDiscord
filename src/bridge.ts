@@ -980,7 +980,17 @@ export class QDiscordBridge {
         return;
       }
 
-      await this.sendDiscordSystemMessage(pair.discordChannelId, formatOneBotGroupUpload(event));
+      const channel = await this.fetchDiscordTextChannel(pair.discordChannelId);
+      if (!channel) {
+        return;
+      }
+
+      await this.sendDiscordMessage(
+        channel,
+        formatOneBotGroupUpload(event),
+        await this.resolveOneBotGroupUploadFiles(event),
+        { users: [], roles: [], parse: [] }
+      );
       return;
     }
 
@@ -1179,6 +1189,35 @@ export class QDiscordBridge {
       firstString(segment.data.file_id, segment.data.id) ?? file
     );
     return firstString(media.url, media.file, media.path);
+  }
+
+  private async resolveOneBotGroupUploadFiles(event: OneBotNoticeEvent): Promise<string[]> {
+    if (!this.config.resolveQqMediaUrls || event.group_id === undefined) {
+      return [];
+    }
+
+    const request = oneBotGroupUploadFileRequest(event);
+    if (!request) {
+      return [];
+    }
+
+    try {
+      await this.waitForOneBotConnection();
+      const groupFile = await this.oneBot.getGroupFileUrl(
+        String(event.group_id),
+        request.fileId,
+        request.busid
+      );
+      const url = firstString(groupFile.url);
+      return url && isHttpUrl(url) ? [url] : [];
+    } catch (error) {
+      this.logger.warn("Failed to resolve QQ group upload URL", {
+        groupId: event.group_id,
+        fileId: request.fileId,
+        error
+      });
+      return [];
+    }
   }
 
   private async createQqReplyFallback(qqMessageId: string): Promise<string> {
@@ -1901,7 +1940,30 @@ function isOneBotTypingNotice(event: OneBotNoticeEvent): boolean {
   );
 }
 
-function formatOneBotGroupUpload(event: OneBotNoticeEvent): string {
+export interface OneBotGroupUploadFileRequest {
+  fileId: string;
+  busid?: string;
+}
+
+export function oneBotGroupUploadFileRequest(
+  event: OneBotNoticeEvent
+): OneBotGroupUploadFileRequest | undefined {
+  const file =
+    event.file && typeof event.file === "object"
+      ? (event.file as Record<string, unknown>)
+      : {};
+  const fileId = firstString(file.id, file.file_id, event.file_id);
+  if (!fileId) {
+    return undefined;
+  }
+
+  return {
+    fileId,
+    busid: firstString(file.busid, file.bus_id, event.busid, event.bus_id)
+  };
+}
+
+export function formatOneBotGroupUpload(event: OneBotNoticeEvent): string {
   const file =
     event.file && typeof event.file === "object"
       ? (event.file as Record<string, unknown>)
