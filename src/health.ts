@@ -34,11 +34,13 @@ export class HealthServer {
       }
 
       if (path === "/readyz") {
-        const ready = status.discord.ready && status.oneBot.connected;
+        const discordReady = status.discord.ready;
+        const oneBotReady = isOneBotReady(status);
+        const ready = discordReady && oneBotReady;
         writeJson(response, ready ? 200 : 503, {
           ok: ready,
-          discord: status.discord.ready,
-          oneBot: status.oneBot.connected
+          discord: discordReady,
+          oneBot: oneBotReady
         });
         return;
       }
@@ -110,6 +112,14 @@ export class HealthServer {
 
     return { ok: true };
   }
+}
+
+function isOneBotReady(status: BridgeRuntimeStatus): boolean {
+  return (
+    status.oneBot.connected &&
+    status.oneBot.lastHeartbeat?.online !== false &&
+    status.oneBot.lastHeartbeat?.good !== false
+  );
 }
 
 function isLoopbackHost(host: string): boolean {

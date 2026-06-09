@@ -98,6 +98,38 @@ describe("HealthServer", () => {
     }
   });
 
+  it("fails readiness when the latest OneBot heartbeat is degraded", async () => {
+    const degraded = status();
+    degraded.discord.ready = true;
+    degraded.oneBot.connected = true;
+    degraded.oneBot.lastHeartbeat = {
+      at: "2027-01-15T08:00:01.000Z",
+      online: true,
+      good: false,
+      intervalMs: 5000
+    };
+    const server = new HealthServer({
+      enabled: true,
+      host: "127.0.0.1",
+      port: 0,
+      getStatus: () => degraded,
+      logger: createLogger("silent")
+    });
+
+    await server.start();
+    try {
+      const address = server.address();
+      const baseUrl = `http://127.0.0.1:${address?.port}`;
+
+      await expect(fetchJson(`${baseUrl}/readyz`)).resolves.toEqual({
+        status: 503,
+        body: { ok: false, discord: true, oneBot: false }
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
   it("requires the configured status token for detailed status", async () => {
     const server = new HealthServer({
       enabled: true,
