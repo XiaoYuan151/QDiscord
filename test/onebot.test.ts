@@ -242,6 +242,28 @@ describe("OneBotClient", () => {
     expect(connections).toBeGreaterThanOrEqual(2);
   });
 
+  it("adds bounded reconnect jitter", async () => {
+    const testServer = await createOneBotServer((socket, packet) => {
+      if (packet.action === "get_login_info") {
+        sendActionResponse(socket, packet.echo, { user_id: 1 });
+      }
+    });
+    testServer.server.on("connection", (socket) => socket.close());
+    const client = createClient(testServer.url, {
+      reconnectInitialMs: 10,
+      reconnectMaxMs: 15,
+      reconnectJitterMs: 10,
+      random: () => 0.75
+    });
+
+    client.connect();
+    const [schedule] = (await once(client, "reconnectScheduled")) as [
+      { attempt: number; delayMs: number }
+    ];
+
+    expect(schedule).toEqual({ attempt: 1, delayMs: 15 });
+  });
+
   it("sends heartbeat pings", async () => {
     let resolvePing: (() => void) | undefined;
     const ping = new Promise<void>((resolve) => {
@@ -333,6 +355,7 @@ function createClient(
     wsUrl,
     reconnectInitialMs: 100,
     reconnectMaxMs: 1000,
+    reconnectJitterMs: 0,
     heartbeatIntervalMs: 0,
     heartbeatTimeoutMs: 0,
     actionTimeoutMs: 1000,

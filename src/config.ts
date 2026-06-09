@@ -30,6 +30,7 @@ const envSchema = z
     NAPCAT_RECONNECT_MS: z.string().optional(),
     NAPCAT_RECONNECT_INITIAL_MS: z.string().optional(),
     NAPCAT_RECONNECT_MAX_MS: z.string().optional(),
+    NAPCAT_RECONNECT_JITTER_MS: z.string().optional(),
     NAPCAT_HEARTBEAT_INTERVAL_MS: z.string().optional(),
     NAPCAT_HEARTBEAT_TIMEOUT_MS: z.string().optional(),
     ONEBOT_ACTION_TIMEOUT_MS: z.string().optional(),
@@ -129,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     }),
     napcatReconnectInitialMs,
     napcatReconnectMaxMs,
+    napcatReconnectJitterMs: parseNonNegativeInteger(parsed.data.NAPCAT_RECONNECT_JITTER_MS, 0),
     napcatHeartbeatIntervalMs: parseNonNegativeInteger(
       parsed.data.NAPCAT_HEARTBEAT_INTERVAL_MS,
       30_000

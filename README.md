@@ -122,10 +122,13 @@ NapCat reconnects use bounded exponential backoff:
 ```bash
 NAPCAT_RECONNECT_INITIAL_MS=1000
 NAPCAT_RECONNECT_MAX_MS=30000
+NAPCAT_RECONNECT_JITTER_MS=0
 NAPCAT_HEARTBEAT_INTERVAL_MS=30000
 NAPCAT_HEARTBEAT_TIMEOUT_MS=10000
 ONEBOT_ACTION_TIMEOUT_MS=15000
 ```
+
+Set `NAPCAT_RECONNECT_JITTER_MS` to add up to that many random milliseconds to each reconnect delay, capped by `NAPCAT_RECONNECT_MAX_MS`.
 
 Local health endpoints are enabled by default:
 

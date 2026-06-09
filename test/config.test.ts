@@ -25,6 +25,7 @@ describe("config", () => {
     expect(config.healthStatusToken).toBeUndefined();
     expect(config.napcatReconnectInitialMs).toBe(1000);
     expect(config.napcatReconnectMaxMs).toBe(30000);
+    expect(config.napcatReconnectJitterMs).toBe(0);
     expect(config.napcatHeartbeatIntervalMs).toBe(30000);
     expect(config.napcatHeartbeatTimeoutMs).toBe(10000);
     expect(config.messageLinkTtlMs).toBe(86400000);
@@ -49,6 +50,7 @@ describe("config", () => {
       ALLOWED_DISCORD_CHANNEL_IDS: "111,333",
       BLOCKED_DISCORD_USER_IDS: "444",
       BLOCKED_QQ_USER_IDS: "555",
+      NAPCAT_RECONNECT_JITTER_MS: "250",
       NAPCAT_HEARTBEAT_INTERVAL_MS: "0",
       NAPCAT_HEARTBEAT_TIMEOUT_MS: "0",
       BRIDGE_TYPING_INDICATORS: "false",
@@ -75,6 +77,7 @@ describe("config", () => {
     expect(config.allowedDiscordChannelIds.has("333")).toBe(true);
     expect(config.blockedDiscordUserIds.has("444")).toBe(true);
     expect(config.blockedQqUserIds.has("555")).toBe(true);
+    expect(config.napcatReconnectJitterMs).toBe(250);
     expect(config.napcatHeartbeatIntervalMs).toBe(0);
     expect(config.napcatHeartbeatTimeoutMs).toBe(0);
     expect(config.bridgeTypingIndicators).toBe(false);

@@ -34,6 +34,7 @@ export interface AppConfig {
   qqMaxTextSegmentLength: number;
   napcatReconnectInitialMs: number;
   napcatReconnectMaxMs: number;
+  napcatReconnectJitterMs: number;
   napcatHeartbeatIntervalMs: number;
   napcatHeartbeatTimeoutMs: number;
   oneBotActionTimeoutMs: number;

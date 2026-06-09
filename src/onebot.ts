@@ -18,9 +18,11 @@ interface OneBotClientOptions {
   accessToken?: string;
   reconnectInitialMs: number;
   reconnectMaxMs: number;
+  reconnectJitterMs: number;
   heartbeatIntervalMs: number;
   heartbeatTimeoutMs: number;
   actionTimeoutMs: number;
+  random?: () => number;
 }
 
 interface PendingAction<T = unknown> {
@@ -358,9 +360,13 @@ export class OneBotClient extends EventEmitter {
     }
 
     this.reconnectAttemptsValue += 1;
-    const delayMs = Math.min(
+    const baseDelayMs = Math.min(
       this.options.reconnectMaxMs,
       this.options.reconnectInitialMs * 2 ** Math.max(0, this.reconnectAttemptsValue - 1)
+    );
+    const delayMs = Math.min(
+      this.options.reconnectMaxMs,
+      baseDelayMs + reconnectJitterDelay(this.options.reconnectJitterMs, this.options.random)
     );
     this.emit("reconnectScheduled", {
       attempt: this.reconnectAttemptsValue,
@@ -462,4 +468,12 @@ function parseOptionalInteger(input: number | string | undefined): number | unde
 
   const value = Number(input);
   return Number.isInteger(value) ? value : undefined;
+}
+
+function reconnectJitterDelay(maxJitterMs: number, random = Math.random): number {
+  if (maxJitterMs <= 0) {
+    return 0;
+  }
+
+  return Math.floor(random() * (maxJitterMs + 1));
 }

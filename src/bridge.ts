@@ -129,6 +129,7 @@ export class QDiscordBridge {
       accessToken: config.napcatAccessToken,
       reconnectInitialMs: config.napcatReconnectInitialMs,
       reconnectMaxMs: config.napcatReconnectMaxMs,
+      reconnectJitterMs: config.napcatReconnectJitterMs,
       heartbeatIntervalMs: config.napcatHeartbeatIntervalMs,
       heartbeatTimeoutMs: config.napcatHeartbeatTimeoutMs,
       actionTimeoutMs: config.oneBotActionTimeoutMs
