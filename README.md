@@ -14,6 +14,7 @@ It supports:
 - Discord mapped custom emojis to QQ `[CQ:face]`
 - Discord embeds, stickers, images, audio, video, and generic files to QQ segments
 - Discord polls to QQ text fallbacks with answer and vote summaries
+- Discord poll vote add/remove events to QQ summaries
 - Discord forwarded message snapshots to QQ text/media fallbacks
 - QQ image, voice, video, and file segments to Discord attachments when OneBot exposes HTTP URLs
 - Basic reply, edit, delete/recall, and Discord bulk-delete synchronization

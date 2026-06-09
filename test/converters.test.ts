@@ -5,6 +5,7 @@ import {
   appendDiscordAttachmentsToQqSegments,
   chunkQqSegments,
   discordMessageToQqSegments,
+  discordPollVoteToQqSegments,
   discordReactionClearToQqSegments,
   discordReactionToQqSegments,
   discordTextToQqSegments,
@@ -504,6 +505,46 @@ describe("Discord to QQ conversion", () => {
       { type: "text", data: { text: "[Discord reaction] cleared all " } },
       { type: "face", data: { id: "14" } },
       { type: "text", data: { text: " reactions (2 reactions)" } }
+    ]);
+  });
+
+  it("converts Discord poll votes to QQ reply summaries", () => {
+    expect(
+      discordPollVoteToQqSegments(
+        {
+          action: "added",
+          userLabel: "Alice",
+          answerId: 2,
+          answerText: "Pizza",
+          answerEmojiText: "<:pizza:222>",
+          replyToQqMessageId: "77"
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map([["222", "14"]])
+        }
+      )
+    ).toEqual([
+      { type: "reply", data: { id: "77" } },
+      { type: "text", data: { text: "[Discord poll] Alice voted for 2. " } },
+      { type: "face", data: { id: "14" } },
+      { type: "text", data: { text: " Pizza" } }
+    ]);
+
+    expect(
+      discordPollVoteToQqSegments(
+        {
+          action: "removed",
+          userLabel: "Alice",
+          answerId: 3
+        },
+        {
+          discordToQqUserMap: new Map(),
+          discordEmojiToCqFaceMap: new Map()
+        }
+      )
+    ).toEqual([
+      { type: "text", data: { text: "[Discord poll] Alice removed vote from answer 3" } }
     ]);
   });
 

@@ -14,9 +14,11 @@ import {
   type MessageCreateOptions,
   type MessageReaction,
   type MessageSnapshot,
+  type PartialPollAnswer,
   type PartialGuildMember,
   type PartialMessageReaction,
   type PartialMessage,
+  type PollAnswer,
   type PartialUser,
   type Snowflake,
   type User
@@ -26,6 +28,7 @@ import { normalizeOneBotMessage } from "./cq.js";
 import {
   chunkQqSegments,
   discordMessageToQqSegments,
+  discordPollVoteToQqSegments,
   discordReactionClearToQqSegments,
   discordReactionToQqSegments,
   escapeDiscordMarkdown,
@@ -278,6 +281,20 @@ export class QDiscordBridge {
       const emojiId = reaction.emoji.id ?? reaction.emoji.name ?? "emoji";
       this.enqueueDiscordToQq(`reaction-clear-emoji:${reaction.message.id}:${emojiId}`, () =>
         this.handleDiscordReactionEmojiClear(reaction)
+      );
+    });
+
+    this.discord.on(Events.MessagePollVoteAdd, (pollAnswer, userId) => {
+      this.enqueueDiscordToQq(
+        `poll-vote-add:${pollAnswer.poll.message.id}:${pollAnswer.id}:${userId}`,
+        () => this.handleDiscordPollVote(pollAnswer, userId, "added")
+      );
+    });
+
+    this.discord.on(Events.MessagePollVoteRemove, (pollAnswer, userId) => {
+      this.enqueueDiscordToQq(
+        `poll-vote-remove:${pollAnswer.poll.message.id}:${pollAnswer.id}:${userId}`,
+        () => this.handleDiscordPollVote(pollAnswer, userId, "removed")
       );
     });
 
@@ -739,6 +756,40 @@ export class QDiscordBridge {
           scope: "emoji",
           emojiText: formatDiscordReactionEmoji(reaction),
           reactionCount: reaction.count,
+          replyToQqMessageId: destination.replyToQqMessageId
+        },
+        {
+          discordToQqUserMap: this.config.discordToQqUserMap,
+          discordEmojiToCqFaceMap: this.config.discordEmojiToCqFaceMap
+        }
+      )
+    );
+  }
+
+  private async handleDiscordPollVote(
+    pollAnswer: PollAnswer | PartialPollAnswer,
+    userId: string,
+    action: "added" | "removed"
+  ): Promise<void> {
+    if (userId === this.discord.user?.id || this.config.blockedDiscordUserIds.has(userId)) {
+      return;
+    }
+
+    const destination = this.resolveDiscordReactionDestination(pollAnswer.poll.message);
+    if (!destination) {
+      return;
+    }
+
+    const user = this.discord.users.cache.get(userId as Snowflake);
+    await this.sendQqSegments(
+      destination.qqGroupId,
+      discordPollVoteToQqSegments(
+        {
+          action,
+          userLabel: user?.globalName ?? user?.username ?? `User ${userId}`,
+          answerId: pollAnswer.id,
+          answerText: pollAnswer.text,
+          answerEmojiText: formatDiscordPollEmoji(pollAnswer.emoji),
           replyToQqMessageId: destination.replyToQqMessageId
         },
         {

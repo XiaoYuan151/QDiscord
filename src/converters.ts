@@ -102,6 +102,15 @@ export interface DiscordReactionClearToQqInput {
   replyToQqMessageId?: string;
 }
 
+export interface DiscordPollVoteToQqInput {
+  action: "added" | "removed";
+  userLabel?: string;
+  answerId?: number | string | null;
+  answerText?: string | null;
+  answerEmojiText?: string | null;
+  replyToQqMessageId?: string;
+}
+
 export interface QqReactionToDiscordInput {
   action: "added" | "removed";
   emojiId?: string;
@@ -315,6 +324,45 @@ export function discordReactionClearToQqSegments(
     segments,
     `[Discord reaction] cleared all reactions${formatReactionCount(input.reactionCount, "emoji type")}`
   );
+  return segments;
+}
+
+export function discordPollVoteToQqSegments(
+  input: DiscordPollVoteToQqInput,
+  options: DiscordTextToQqOptions
+): CqSegment[] {
+  const segments: CqSegment[] = [];
+  if (input.replyToQqMessageId) {
+    segments.push({ type: "reply", data: { id: input.replyToQqMessageId } });
+  }
+
+  const verb = input.action === "added" ? "voted for" : "removed vote from";
+  appendTextSegment(
+    segments,
+    `[Discord poll] ${input.userLabel ?? "A Discord user"} ${verb} `
+  );
+
+  const answerPrefix =
+    input.answerId !== undefined && input.answerId !== null ? `${input.answerId}. ` : "";
+  const answerText = input.answerText?.trim();
+  const answerEmojiText = input.answerEmojiText?.trim();
+  if (!answerText && !answerEmojiText) {
+    appendTextSegment(
+      segments,
+      input.answerId !== undefined && input.answerId !== null
+        ? `answer ${input.answerId}`
+        : "an answer"
+    );
+    return segments;
+  }
+
+  appendTextSegment(segments, answerPrefix);
+  if (answerEmojiText) {
+    appendSegments(segments, discordTextToQqSegments(answerEmojiText, options));
+  }
+  if (answerText) {
+    appendTextSegment(segments, `${answerEmojiText ? " " : ""}${answerText}`);
+  }
   return segments;
 }
 
