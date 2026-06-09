@@ -15,8 +15,7 @@ const healthServer = new HealthServer({
   logger
 });
 
-await healthServer.start();
-await bridge.start();
+let shuttingDown = false;
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
@@ -29,6 +28,7 @@ process.on("unhandledRejection", (reason) => {
   logger.error("Unhandled promise rejection", {
     error: reason instanceof Error ? reason : new Error(String(reason))
   });
+  void shutdown(1);
 });
 
 process.on("uncaughtException", (error) => {
@@ -36,7 +36,13 @@ process.on("uncaughtException", (error) => {
   void shutdown(1);
 });
 
-let shuttingDown = false;
+try {
+  await healthServer.start();
+  await bridge.start();
+} catch (error) {
+  logger.error("Startup failed", { error });
+  await shutdown(1);
+}
 
 async function shutdown(exitCode: number): Promise<void> {
   if (shuttingDown) {
