@@ -108,6 +108,8 @@ QUEUE_RETRY_JITTER_MS=0
 SHUTDOWN_DRAIN_TIMEOUT_MS=10000
 ```
 
+On shutdown, QDiscord waits up to `SHUTDOWN_DRAIN_TIMEOUT_MS` for queued bridge work to finish, then drops pending work and disables queue retries before disconnecting clients.
+
 Reply/delete links are retained in memory with bounded cleanup:
 
 ```bash

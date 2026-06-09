@@ -36,6 +36,7 @@ export class AsyncTaskQueue {
   private nextRunAt = 0;
   private drainTimer?: NodeJS.Timeout;
   private drainTimerDueAt = 0;
+  private closed = false;
 
   constructor(private readonly options: AsyncTaskQueueOptions) {}
 
@@ -44,6 +45,11 @@ export class AsyncTaskQueue {
   }
 
   add<T>(label: string, task: () => Promise<T>): Promise<T> {
+    if (this.closed) {
+      this.dropped += 1;
+      return Promise.reject(new Error(`Queue ${this.options.name} is stopped; dropped task: ${label}`));
+    }
+
     if (this.pending.length >= this.options.maxPending) {
       this.dropped += 1;
       return Promise.reject(new Error(`Queue ${this.options.name} is full; dropped task: ${label}`));
@@ -60,6 +66,23 @@ export class AsyncTaskQueue {
       });
       this.scheduleDrain();
     });
+  }
+
+  shutdown(reason = new Error(`Queue ${this.options.name} stopped`)): number {
+    this.closed = true;
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = undefined;
+      this.drainTimerDueAt = 0;
+    }
+
+    const dropped = this.pending.splice(0);
+    this.dropped += dropped.length;
+    for (const item of dropped) {
+      item.reject(reason);
+    }
+    this.notifyIdleWaiters();
+    return dropped.length;
   }
 
   stats(): QueueStats {
@@ -100,6 +123,10 @@ export class AsyncTaskQueue {
   }
 
   private scheduleDrain(delayMs = 0): void {
+    if (this.closed) {
+      return;
+    }
+
     const dueAt = Date.now() + Math.max(0, delayMs);
     if (this.drainTimer) {
       if (this.drainTimerDueAt <= dueAt) {
@@ -119,6 +146,11 @@ export class AsyncTaskQueue {
   }
 
   private async drain(): Promise<void> {
+    if (this.closed) {
+      this.notifyIdleWaiters();
+      return;
+    }
+
     while (this.running < this.options.concurrency && this.pending.length > 0) {
       const now = Date.now();
       if (now < this.nextRunAt) {
@@ -151,7 +183,7 @@ export class AsyncTaskQueue {
       item.resolve(await item.task());
       this.completed += 1;
     } catch (error) {
-      if (item.attempt < this.options.maxRetries) {
+      if (!this.closed && item.attempt < this.options.maxRetries) {
         const retryDelayMs = this.retryDelayMs(item.attempt + 1);
         this.pending.unshift({
           ...item,
@@ -165,7 +197,9 @@ export class AsyncTaskQueue {
       }
     } finally {
       this.running -= 1;
-      this.scheduleDrain();
+      if (!this.closed) {
+        this.scheduleDrain();
+      }
       this.notifyIdleWaiters();
     }
   }

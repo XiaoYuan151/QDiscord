@@ -192,6 +192,15 @@ export class QDiscordBridge {
         qqToDiscord: this.qqToDiscordQueue.stats()
       });
     }
+    const shutdownReason = new Error("Bridge queue stopped during shutdown");
+    const droppedDiscordToQq = this.discordToQqQueue.shutdown(shutdownReason);
+    const droppedQqToDiscord = this.qqToDiscordQueue.shutdown(shutdownReason);
+    if (droppedDiscordToQq > 0 || droppedQqToDiscord > 0) {
+      this.logger.warn("Dropped pending bridge tasks during shutdown", {
+        discordToQq: droppedDiscordToQq,
+        qqToDiscord: droppedQqToDiscord
+      });
+    }
 
     this.oneBot.disconnect();
     this.discord.destroy();
@@ -1719,6 +1728,11 @@ export class QDiscordBridge {
     }
 
     void this.discordToQqQueue.add(label, task).catch((error) => {
+      if (this.stopping) {
+        this.logger.debug("Discord to QQ task stopped during shutdown", { label, error });
+        return;
+      }
+
       this.logger.error("Discord to QQ task failed", { label, error });
     });
   }
@@ -1729,6 +1743,11 @@ export class QDiscordBridge {
     }
 
     void this.qqToDiscordQueue.add(label, task).catch((error) => {
+      if (this.stopping) {
+        this.logger.debug("QQ to Discord task stopped during shutdown", { label, error });
+        return;
+      }
+
       this.logger.error("QQ to Discord task failed", { label, error });
     });
   }
