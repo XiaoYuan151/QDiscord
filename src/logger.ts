@@ -99,4 +99,6 @@ function sanitizeString(value: string): string {
     .replace(/(authorization:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/(authorization:\s*bot\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(cookie:\s*)[^\n\r]+/gi, "$1[redacted]")
+    .replace(/([?&](?:token|secret|password)=)[^&\s]+/gi, "$1[redacted]");
 }

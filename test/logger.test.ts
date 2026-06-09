@@ -30,8 +30,8 @@ describe("logger", () => {
     const logger = createLogger("debug");
 
     logger.error("failed bearer abc123", {
-      url: "ws://127.0.0.1:3001/?access_token=napcat-token&x=1",
-      error: new Error("Authorization: Bearer discord-token")
+      url: "ws://127.0.0.1:3001/?access_token=napcat-token&token=other-token&x=1",
+      error: new Error("Authorization: Bearer discord-token\nCookie: session=secret")
     });
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
@@ -42,8 +42,10 @@ describe("logger", () => {
     };
 
     expect(payload.message).toBe("failed bearer [redacted]");
-    expect(payload.url).toBe("ws://127.0.0.1:3001/?access_token=[redacted]&x=1");
-    expect(payload.error.message).toBe("Authorization: Bearer [redacted]");
+    expect(payload.url).toBe(
+      "ws://127.0.0.1:3001/?access_token=[redacted]&token=[redacted]&x=1"
+    );
+    expect(payload.error.message).toBe("Authorization: Bearer [redacted]\nCookie: [redacted]");
   });
 
   it("does not redact ordinary bot log messages", () => {
