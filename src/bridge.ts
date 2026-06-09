@@ -153,7 +153,8 @@ export class QDiscordBridge {
       maxPending: config.queueMaxPending,
       minDelayMs: config.queueMinDelayMs,
       maxRetries: config.queueMaxRetries,
-      retryBaseDelayMs: config.queueRetryBaseDelayMs
+      retryBaseDelayMs: config.queueRetryBaseDelayMs,
+      retryJitterMs: config.queueRetryJitterMs
     });
     this.qqToDiscordQueue = new AsyncTaskQueue({
       name: "qq-to-discord",
@@ -161,7 +162,8 @@ export class QDiscordBridge {
       maxPending: config.queueMaxPending,
       minDelayMs: config.queueMinDelayMs,
       maxRetries: config.queueMaxRetries,
-      retryBaseDelayMs: config.queueRetryBaseDelayMs
+      retryBaseDelayMs: config.queueRetryBaseDelayMs,
+      retryJitterMs: config.queueRetryJitterMs
     });
 
     if (config.messageLinkStorePath) {

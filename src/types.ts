@@ -53,6 +53,7 @@ export interface AppConfig {
   queueMinDelayMs: number;
   queueMaxRetries: number;
   queueRetryBaseDelayMs: number;
+  queueRetryJitterMs: number;
   shutdownDrainTimeoutMs: number;
   messageLinkTtlMs: number;
   messageLinkMaxEntries: number;

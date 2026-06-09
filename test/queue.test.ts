@@ -119,6 +119,39 @@ describe("AsyncTaskQueue", () => {
     vi.useRealTimers();
   });
 
+  it("adds bounded retry jitter", async () => {
+    vi.useFakeTimers();
+    const queue = new AsyncTaskQueue({
+      name: "test",
+      concurrency: 1,
+      maxPending: 100,
+      minDelayMs: 0,
+      maxRetries: 1,
+      retryBaseDelayMs: 1000,
+      retryJitterMs: 100,
+      random: () => 0.5
+    });
+    let attempts = 0;
+
+    const result = queue.add("flaky", async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("retry later");
+      }
+      return "ok";
+    });
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1049);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(result).resolves.toBe("ok");
+    expect(attempts).toBe(2);
+    vi.useRealTimers();
+  });
+
   it("drops new tasks when pending work exceeds the configured limit", async () => {
     const queue = new AsyncTaskQueue({
       name: "test",

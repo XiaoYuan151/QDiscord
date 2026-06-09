@@ -5,6 +5,8 @@ export interface AsyncTaskQueueOptions {
   minDelayMs: number;
   maxRetries: number;
   retryBaseDelayMs: number;
+  retryJitterMs?: number;
+  random?: () => number;
 }
 
 export interface QueueStats {
@@ -179,6 +181,12 @@ export class AsyncTaskQueue {
   }
 
   private retryDelayMs(attempt: number): number {
-    return this.options.retryBaseDelayMs * 2 ** Math.max(0, attempt - 1);
+    const baseDelayMs = this.options.retryBaseDelayMs * 2 ** Math.max(0, attempt - 1);
+    const jitterMs = this.options.retryJitterMs ?? 0;
+    if (jitterMs <= 0) {
+      return baseDelayMs;
+    }
+
+    return baseDelayMs + Math.floor((this.options.random ?? Math.random)() * (jitterMs + 1));
   }
 }

@@ -41,6 +41,7 @@ describe("config", () => {
     expect(config.messageLinkMaxEntries).toBe(10000);
     expect(config.shutdownDrainTimeoutMs).toBe(10000);
     expect(config.queueMaxPending).toBe(1000);
+    expect(config.queueRetryJitterMs).toBe(0);
     expect(config.discordChannelToQqGroup.get("111")).toBe("222");
     expect(config.discordChannelToBridgePair.get("111")?.direction).toBe("both");
   });
@@ -71,6 +72,7 @@ describe("config", () => {
       RESOLVE_QQ_MEDIA_URLS: "false",
       QUEUE_MAX_PENDING: "50",
       QUEUE_MAX_RETRIES: "0",
+      QUEUE_RETRY_JITTER_MS: "250",
       SHUTDOWN_DRAIN_TIMEOUT_MS: "0",
       MESSAGE_LINK_TTL_MS: "5000",
       MESSAGE_LINK_MAX_ENTRIES: "100",
@@ -105,6 +107,7 @@ describe("config", () => {
     expect(config.resolveQqMediaUrls).toBe(false);
     expect(config.queueMaxPending).toBe(50);
     expect(config.queueMaxRetries).toBe(0);
+    expect(config.queueRetryJitterMs).toBe(250);
     expect(config.shutdownDrainTimeoutMs).toBe(0);
     expect(config.messageLinkTtlMs).toBe(5000);
     expect(config.messageLinkMaxEntries).toBe(100);
