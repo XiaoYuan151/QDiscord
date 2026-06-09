@@ -507,17 +507,17 @@ export class QDiscordBridge {
       return;
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     if (!this.canUseStatusCommand(interaction)) {
-      await interaction.reply({
-        content: "You do not have permission to use this bridge command.",
-        ephemeral: true
+      await interaction.editReply({
+        content: "You do not have permission to use this bridge command."
       });
       return;
     }
 
-    await interaction.reply({
-      content: formatStatusForDiscord(this.getStatus()),
-      ephemeral: true
+    await interaction.editReply({
+      content: formatStatusForDiscord(this.getStatus())
     });
   }
 
