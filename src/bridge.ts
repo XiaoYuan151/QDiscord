@@ -622,7 +622,7 @@ export class QDiscordBridge {
   }
 
   private async handleDiscordMessageUpdate(message: Message): Promise<void> {
-    if (message.author.id === this.discord.user?.id) {
+    if (!this.isDiscordActorBridgeable(message.author.id, message.author.bot)) {
       return;
     }
 
