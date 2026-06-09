@@ -175,7 +175,9 @@ If QQ image or voice segments arrive with only OneBot file IDs, `RESOLVE_QQ_MEDI
 Optional filters let you limit bridge traffic:
 
 ```bash
+ALLOWED_DISCORD_GUILD_IDS=
 ALLOWED_DISCORD_CHANNEL_IDS=123456789012345678
+ALLOWED_QQ_GROUP_IDS=
 BLOCKED_DISCORD_USER_IDS=
 BLOCKED_QQ_USER_IDS=
 ```

@@ -62,7 +62,9 @@ export interface AppConfig {
   healthPort: number;
   healthStatusToken?: string;
   logLevel: LogLevel;
+  allowedDiscordGuildIds: Set<string>;
   allowedDiscordChannelIds: Set<string>;
+  allowedQqGroupIds: Set<string>;
   blockedDiscordUserIds: Set<string>;
   blockedQqUserIds: Set<string>;
 }

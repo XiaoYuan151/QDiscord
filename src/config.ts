@@ -69,7 +69,9 @@ const envSchema = z
     HEALTH_PORT: z.string().optional(),
     HEALTH_STATUS_TOKEN: z.string().optional(),
     LOG_LEVEL: z.string().optional(),
+    ALLOWED_DISCORD_GUILD_IDS: z.string().optional(),
     ALLOWED_DISCORD_CHANNEL_IDS: z.string().optional(),
+    ALLOWED_QQ_GROUP_IDS: z.string().optional(),
     BLOCKED_DISCORD_USER_IDS: z.string().optional(),
     BLOCKED_QQ_USER_IDS: z.string().optional()
   })
@@ -176,10 +178,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     healthPort: parsePort(parsed.data.HEALTH_PORT, 8787),
     healthStatusToken: parseOptionalSecret(parsed.data.HEALTH_STATUS_TOKEN, "HEALTH_STATUS_TOKEN"),
     logLevel: parseLogLevel(parsed.data.LOG_LEVEL, "info"),
+    allowedDiscordGuildIds: parseIdSet(
+      parsed.data.ALLOWED_DISCORD_GUILD_IDS,
+      "ALLOWED_DISCORD_GUILD_IDS"
+    ),
     allowedDiscordChannelIds: parseIdSet(
       parsed.data.ALLOWED_DISCORD_CHANNEL_IDS,
       "ALLOWED_DISCORD_CHANNEL_IDS"
     ),
+    allowedQqGroupIds: parseIdSet(parsed.data.ALLOWED_QQ_GROUP_IDS, "ALLOWED_QQ_GROUP_IDS"),
     blockedDiscordUserIds: parseIdSet(parsed.data.BLOCKED_DISCORD_USER_IDS, "BLOCKED_DISCORD_USER_IDS"),
     blockedQqUserIds: parseIdSet(parsed.data.BLOCKED_QQ_USER_IDS, "BLOCKED_QQ_USER_IDS")
   };

@@ -29,6 +29,9 @@ describe("config", () => {
     expect(config.statusCommandAllowedUserIds.size).toBe(0);
     expect(config.healthPort).toBe(8787);
     expect(config.healthStatusToken).toBeUndefined();
+    expect(config.allowedDiscordGuildIds.size).toBe(0);
+    expect(config.allowedDiscordChannelIds.size).toBe(0);
+    expect(config.allowedQqGroupIds.size).toBe(0);
     expect(config.napcatReconnectInitialMs).toBe(1000);
     expect(config.napcatReconnectMaxMs).toBe(30000);
     expect(config.napcatReconnectJitterMs).toBe(0);
@@ -54,7 +57,9 @@ describe("config", () => {
       STATUS_COMMAND_NAME: "qbridge",
       STATUS_COMMAND_GUILD_IDS: "777,888",
       STATUS_COMMAND_ALLOWED_USER_IDS: "999,1000",
+      ALLOWED_DISCORD_GUILD_IDS: "666",
       ALLOWED_DISCORD_CHANNEL_IDS: "111,333",
+      ALLOWED_QQ_GROUP_IDS: "222",
       BLOCKED_DISCORD_USER_IDS: "444",
       BLOCKED_QQ_USER_IDS: "555",
       NAPCAT_RECONNECT_JITTER_MS: "250",
@@ -86,7 +91,9 @@ describe("config", () => {
     expect(config.statusCommandName).toBe("qbridge");
     expect([...config.statusCommandGuildIds]).toEqual(["777", "888"]);
     expect([...config.statusCommandAllowedUserIds]).toEqual(["999", "1000"]);
+    expect(config.allowedDiscordGuildIds.has("666")).toBe(true);
     expect(config.allowedDiscordChannelIds.has("333")).toBe(true);
+    expect(config.allowedQqGroupIds.has("222")).toBe(true);
     expect(config.blockedDiscordUserIds.has("444")).toBe(true);
     expect(config.blockedQqUserIds.has("555")).toBe(true);
     expect(config.napcatReconnectJitterMs).toBe(250);
@@ -228,6 +235,20 @@ describe("config", () => {
         STATUS_COMMAND_ALLOWED_USER_IDS: "user"
       })
     ).toThrow("STATUS_COMMAND_ALLOWED_USER_IDS must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        ALLOWED_DISCORD_GUILD_IDS: "guild"
+      })
+    ).toThrow("ALLOWED_DISCORD_GUILD_IDS must be numeric");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        ALLOWED_QQ_GROUP_IDS: "group"
+      })
+    ).toThrow("ALLOWED_QQ_GROUP_IDS must be numeric");
 
     expect(() =>
       loadConfig({
