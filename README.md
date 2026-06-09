@@ -150,7 +150,7 @@ HEALTH_STATUS_TOKEN=
 
 Detailed `/status` is unauthenticated only when `HEALTH_HOST` is loopback (`127.0.0.1`, `localhost`, or `::1`). If you bind the health server to a non-loopback address, set `HEALTH_STATUS_TOKEN` and send `Authorization: Bearer <token>` with status requests.
 
-The Discord bot registers `/bridge status` by default. Change `STATUS_COMMAND_NAME` if that command name conflicts. Leave `STATUS_COMMAND_GUILD_IDS` empty for a global command, or set guild IDs for immediate guild-scoped registration:
+The Discord bot registers `/bridge status` by default. Change `STATUS_COMMAND_NAME` if that command name conflicts. Leave `STATUS_COMMAND_GUILD_IDS` empty for a global command, or set guild IDs for immediate guild-scoped registration. If `ALLOWED_DISCORD_GUILD_IDS` is set and `STATUS_COMMAND_GUILD_IDS` is empty, QDiscord registers the command only in the allowed guilds:
 
 ```bash
 STATUS_COMMAND_GUILD_IDS=123456789012345678

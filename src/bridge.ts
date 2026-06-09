@@ -434,7 +434,12 @@ export class QDiscordBridge {
       ]
     } satisfies ApplicationCommandDataResolvable;
 
-    if (this.config.statusCommandGuildIds.size === 0) {
+    const registrationGuildIds = statusCommandRegistrationGuildIds({
+      statusCommandGuildIds: this.config.statusCommandGuildIds,
+      allowedDiscordGuildIds: this.config.allowedDiscordGuildIds
+    });
+
+    if (registrationGuildIds.length === 0) {
       if (!this.discord.application?.commands) {
         return;
       }
@@ -447,7 +452,7 @@ export class QDiscordBridge {
       return;
     }
 
-    for (const guildId of this.config.statusCommandGuildIds) {
+    for (const guildId of registrationGuildIds) {
       const guild = await this.discord.guilds.fetch(guildId as Snowflake);
       await upsertStatusCommand(guild.commands, commandData);
       this.logger.info("Discord status command registered", {
@@ -1747,6 +1752,17 @@ export function isStatusCommandAuthorized(input: {
       input.guildId !== undefined &&
       input.allowedGuildIds.has(input.guildId));
   return guildAllowed && (input.allowedUserIds.has(input.userId) || input.hasManageGuild);
+}
+
+export function statusCommandRegistrationGuildIds(input: {
+  statusCommandGuildIds: Set<string>;
+  allowedDiscordGuildIds: Set<string>;
+}): string[] {
+  return [
+    ...(input.statusCommandGuildIds.size > 0
+      ? input.statusCommandGuildIds
+      : input.allowedDiscordGuildIds)
+  ];
 }
 
 export function isOneBotNoticeBlocked(

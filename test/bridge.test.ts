@@ -13,7 +13,8 @@ import {
   isStatusCommandAuthorized,
   normalizeMessageLink,
   oneBotGroupUploadFileRequest,
-  resolveDiscordBridgeRoute
+  resolveDiscordBridgeRoute,
+  statusCommandRegistrationGuildIds
 } from "../src/bridge.js";
 import type {
   BridgePair,
@@ -75,6 +76,35 @@ describe("bridge command authorization", () => {
         hasManageGuild: true
       })
     ).toBe(false);
+  });
+});
+
+describe("bridge command registration scope", () => {
+  it("registers globally when no guild scope is configured", () => {
+    expect(
+      statusCommandRegistrationGuildIds({
+        statusCommandGuildIds: new Set(),
+        allowedDiscordGuildIds: new Set()
+      })
+    ).toEqual([]);
+  });
+
+  it("uses allowed Discord guilds as the default guild registration scope", () => {
+    expect(
+      statusCommandRegistrationGuildIds({
+        statusCommandGuildIds: new Set(),
+        allowedDiscordGuildIds: new Set(["100", "200"])
+      })
+    ).toEqual(["100", "200"]);
+  });
+
+  it("prefers explicit status command guild ids over allowed Discord guilds", () => {
+    expect(
+      statusCommandRegistrationGuildIds({
+        statusCommandGuildIds: new Set(["300"]),
+        allowedDiscordGuildIds: new Set(["100", "200"])
+      })
+    ).toEqual(["300"]);
   });
 });
 
