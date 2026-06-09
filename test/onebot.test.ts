@@ -96,7 +96,7 @@ describe("OneBotClient", () => {
     ]);
   });
 
-  it("emits message and notice events from OneBot packets", async () => {
+  it("emits message, notice, and request events from OneBot packets", async () => {
     const testServer = await createOneBotServer((socket, packet) => {
       if (packet.action === "get_login_info") {
         sendActionResponse(socket, packet.echo, { user_id: 1 });
@@ -117,18 +117,31 @@ describe("OneBotClient", () => {
             message_id: 456
           })
         );
+        socket.send(
+          JSON.stringify({
+            post_type: "request",
+            request_type: "group",
+            sub_type: "add",
+            group_id: 123,
+            user_id: 789,
+            comment: "hello"
+          })
+        );
       }
     });
     const client = createClient(testServer.url);
     const messageEvent = once(client, "message");
     const noticeEvent = once(client, "notice");
+    const requestEvent = once(client, "request");
 
     client.connect();
     const [message] = await messageEvent;
     const [notice] = await noticeEvent;
+    const [request] = await requestEvent;
 
     expect(message).toMatchObject({ post_type: "message", message_id: 456 });
     expect(notice).toMatchObject({ post_type: "notice", notice_type: "group_recall" });
+    expect(request).toMatchObject({ post_type: "request", request_type: "group" });
   });
 
   it("schedules bounded reconnects after close", async () => {

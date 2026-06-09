@@ -48,6 +48,7 @@ import type {
   CqSegment,
   OneBotMessageEvent,
   OneBotNoticeEvent,
+  OneBotRequestEvent,
   OneBotSendMessageData
 } from "./types.js";
 
@@ -350,6 +351,14 @@ export class QDiscordBridge {
       this.enqueueQqToDiscord(
         `qq-notice:${(event as OneBotNoticeEvent).notice_type}:${(event as OneBotNoticeEvent).message_id ?? "unknown"}`,
         () => this.handleOneBotNotice(event as OneBotNoticeEvent)
+      );
+    });
+
+    this.oneBot.on("request", (event) => {
+      const data = event as OneBotRequestEvent;
+      this.enqueueQqToDiscord(
+        `qq-request:${data.request_type}:${data.group_id ?? "unknown"}:${data.user_id ?? "unknown"}`,
+        () => this.handleOneBotRequest(data)
       );
     });
 
@@ -910,6 +919,23 @@ export class QDiscordBridge {
     }
   }
 
+  private async handleOneBotRequest(event: OneBotRequestEvent): Promise<void> {
+    if (
+      event.request_type !== "group" ||
+      event.group_id === undefined ||
+      isOneBotRequestBlocked(event, this.config.blockedQqUserIds)
+    ) {
+      return;
+    }
+
+    const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
+    if (!pair || pair.direction === "discord-to-qq") {
+      return;
+    }
+
+    await this.sendDiscordSystemMessage(pair.discordChannelId, formatOneBotGroupRequest(event));
+  }
+
   private async createQqReplyFallback(qqMessageId: string): Promise<string> {
     try {
       await this.waitForOneBotConnection();
@@ -1398,6 +1424,13 @@ export function isOneBotNoticeBlocked(
   return event.user_id !== undefined && blockedQqUserIds.has(String(event.user_id));
 }
 
+export function isOneBotRequestBlocked(
+  event: OneBotRequestEvent,
+  blockedQqUserIds: Set<string>
+): boolean {
+  return event.user_id !== undefined && blockedQqUserIds.has(String(event.user_id));
+}
+
 export function normalizeMessageLink(link: MessageLink): MessageLink {
   const discordMessageIds = messageLinkDiscordIds(link);
   const qqMessageIds = messageLinkQqIds(link);
@@ -1645,6 +1678,22 @@ export function formatOneBotGroupNotice(event: OneBotNoticeEvent): string | unde
   }
 
   return undefined;
+}
+
+export function formatOneBotGroupRequest(event: OneBotRequestEvent): string {
+  const groupId = event.group_id ?? "unknown";
+  const userId = event.user_id ?? "unknown";
+  const subType = firstString(event.sub_type, event.action)?.toLowerCase() ?? "";
+  const action = subType === "invite" ? "invited the bot to group" : "requested to join group";
+  const comment = firstString(event.comment);
+  const flag = firstString(event.flag);
+  return [
+    `[QQ group request] User ${userId} ${action} ${groupId}`,
+    comment ? `Comment: ${comment}` : undefined,
+    flag ? `Flag: ${flag}` : undefined
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function formatBytes(value: string): string {

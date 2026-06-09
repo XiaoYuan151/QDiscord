@@ -8,6 +8,7 @@ import type {
   OneBotGetMessageData,
   OneBotMessageEvent,
   OneBotNoticeEvent,
+  OneBotRequestEvent,
   OneBotSendMessageData
 } from "./types.js";
 
@@ -229,7 +230,7 @@ export class OneBotClient extends EventEmitter {
   }
 
   private handlePacket(rawPacket: string): void {
-    let packet: OneBotActionResponse | OneBotMessageEvent;
+    let packet: OneBotActionResponse | OneBotMessageEvent | OneBotNoticeEvent | OneBotRequestEvent;
     try {
       packet = JSON.parse(rawPacket) as OneBotActionResponse | OneBotMessageEvent;
     } catch {
@@ -248,6 +249,9 @@ export class OneBotClient extends EventEmitter {
     }
     if ((packet as OneBotNoticeEvent).post_type === "notice") {
       this.emit("notice", packet as OneBotNoticeEvent);
+    }
+    if ((packet as OneBotRequestEvent).post_type === "request") {
+      this.emit("request", packet as OneBotRequestEvent);
     }
   }
 

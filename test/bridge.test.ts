@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatOneBotGroupNotice,
+  formatOneBotGroupRequest,
   isOneBotNoticeBlocked,
+  isOneBotRequestBlocked,
   isStatusCommandAuthorized,
   normalizeMessageLink,
   resolveDiscordBridgeRoute
 } from "../src/bridge.js";
-import type { BridgePair, OneBotNoticeEvent } from "../src/types.js";
+import type { BridgePair, OneBotNoticeEvent, OneBotRequestEvent } from "../src/types.js";
 
 describe("bridge command authorization", () => {
   it("allows status command users by allow-list or Manage Server permission", () => {
@@ -236,5 +238,49 @@ describe("OneBot notice filtering", () => {
         new Set(["200"])
       )
     ).toBe(false);
+  });
+});
+
+describe("OneBot group request formatting", () => {
+  it("formats QQ group join and invite requests", () => {
+    expect(
+      formatOneBotGroupRequest({
+        post_type: "request",
+        request_type: "group",
+        sub_type: "add",
+        group_id: 100,
+        user_id: 200,
+        comment: "please approve",
+        flag: "flag-1"
+      })
+    ).toBe(
+      [
+        "[QQ group request] User 200 requested to join group 100",
+        "Comment: please approve",
+        "Flag: flag-1"
+      ].join("\n")
+    );
+
+    expect(
+      formatOneBotGroupRequest({
+        post_type: "request",
+        request_type: "group",
+        sub_type: "invite",
+        group_id: 100,
+        user_id: 200
+      })
+    ).toBe("[QQ group request] User 200 invited the bot to group 100");
+  });
+
+  it("blocks requests from configured QQ user ids", () => {
+    const request: OneBotRequestEvent = {
+      post_type: "request",
+      request_type: "group",
+      group_id: 100,
+      user_id: 200
+    };
+
+    expect(isOneBotRequestBlocked(request, new Set(["200"]))).toBe(true);
+    expect(isOneBotRequestBlocked(request, new Set(["201"]))).toBe(false);
   });
 });

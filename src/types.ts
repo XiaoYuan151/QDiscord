@@ -98,6 +98,17 @@ export interface OneBotNoticeEvent {
   [key: string]: unknown;
 }
 
+export interface OneBotRequestEvent {
+  post_type: "request";
+  request_type: string;
+  sub_type?: string;
+  group_id?: number | string;
+  user_id?: number | string;
+  comment?: string;
+  flag?: string;
+  [key: string]: unknown;
+}
+
 export interface OneBotSendMessageData {
   message_id?: number | string;
 }
