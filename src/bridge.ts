@@ -534,7 +534,7 @@ export class QDiscordBridge {
     if (
       !route ||
       route.pair.direction === "qq-to-discord" ||
-      !this.shouldBridgeDiscordMessage(message, route.routeChannelId)
+      !this.shouldBridgeDiscordMessage(message, route)
     ) {
       return;
     }
@@ -700,7 +700,7 @@ export class QDiscordBridge {
     for (const pair of this.config.bridgePairs) {
       if (
         pair.direction === "qq-to-discord" ||
-        !this.discordRouteAllowed(pair.discordChannelId, pair.discordChannelId)
+        !this.bridgeRouteAllowed([pair.discordChannelId], pair.qqGroupId)
       ) {
         continue;
       }
@@ -847,12 +847,8 @@ export class QDiscordBridge {
     }
 
     const qqGroupId = String(event.group_id);
-    if (!this.qqGroupAllowed(qqGroupId)) {
-      return;
-    }
-
-    const pair = this.config.qqGroupToBridgePair.get(qqGroupId);
-    if (!pair || pair.direction === "discord-to-qq") {
+    const pair = this.getAllowedQqToDiscordPair(qqGroupId);
+    if (!pair) {
       return;
     }
     const discordChannelId = pair.discordChannelId;
@@ -946,8 +942,8 @@ export class QDiscordBridge {
 
     const reaction = extractOneBotReaction(event);
     if (reaction && event.group_id !== undefined) {
-      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-      if (!pair || pair.direction === "discord-to-qq") {
+      const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+      if (!pair) {
         return;
       }
       const discordChannelId = pair.discordChannelId;
@@ -975,8 +971,8 @@ export class QDiscordBridge {
     }
 
     if (event.notice_type === "group_upload" && event.group_id !== undefined) {
-      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-      if (!pair || pair.direction === "discord-to-qq") {
+      const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+      if (!pair) {
         return;
       }
 
@@ -999,8 +995,8 @@ export class QDiscordBridge {
       event.group_id !== undefined &&
       (event.notice_type === "group_increase" || event.notice_type === "group_decrease")
     ) {
-      const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-      if (!pair || pair.direction === "discord-to-qq") {
+      const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+      if (!pair) {
         return;
       }
 
@@ -1014,8 +1010,8 @@ export class QDiscordBridge {
     if (event.group_id !== undefined) {
       const content = formatOneBotGroupNotice(event);
       if (content) {
-        const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-        if (!pair || pair.direction === "discord-to-qq") {
+        const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+        if (!pair) {
           return;
         }
 
@@ -1035,8 +1031,8 @@ export class QDiscordBridge {
       return;
     }
 
-    const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-    if (!pair || pair.direction === "discord-to-qq") {
+    const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+    if (!pair) {
       return;
     }
 
@@ -1254,12 +1250,8 @@ export class QDiscordBridge {
       return;
     }
 
-    if (!this.qqGroupAllowed(String(event.group_id))) {
-      return;
-    }
-
-    const pair = this.config.qqGroupToBridgePair.get(String(event.group_id));
-    if (!pair || pair.direction === "discord-to-qq") {
+    const pair = this.getAllowedQqToDiscordPair(String(event.group_id));
+    if (!pair) {
       return;
     }
     const discordChannelId = pair.discordChannelId;
@@ -1268,10 +1260,10 @@ export class QDiscordBridge {
     await channel?.sendTyping?.();
   }
 
-  private shouldBridgeDiscordMessage(message: Message, routeDiscordChannelId = message.channelId): boolean {
+  private shouldBridgeDiscordMessage(message: Message, route: DiscordBridgeRoute): boolean {
     if (
       !this.discordGuildAllowed(message.guildId) ||
-      !this.discordRouteAllowed(message.channelId, routeDiscordChannelId)
+      !this.bridgeRouteAllowed([message.channelId, route.routeChannelId], route.pair.qqGroupId)
     ) {
       return false;
     }
@@ -1299,7 +1291,11 @@ export class QDiscordBridge {
 
   private linkAllowsDiscordToQq(link: MessageLink): boolean {
     const pair = this.config.qqGroupToBridgePair.get(link.qqGroupId);
-    return pair !== undefined && pair.direction !== "qq-to-discord";
+    return (
+      pair !== undefined &&
+      pair.direction !== "qq-to-discord" &&
+      this.bridgeRouteAllowed([link.discordChannelId, pair.discordChannelId], link.qqGroupId)
+    );
   }
 
   private resolveDiscordReactionDestination(
@@ -1320,7 +1316,7 @@ export class QDiscordBridge {
     if (
       !route ||
       route.pair.direction === "qq-to-discord" ||
-      !this.discordRouteAllowed(message.channelId, route.routeChannelId)
+      !this.bridgeRouteAllowed([message.channelId, route.routeChannelId], route.pair.qqGroupId)
     ) {
       return undefined;
     }
@@ -1328,17 +1324,33 @@ export class QDiscordBridge {
     return { qqGroupId: route.pair.qqGroupId };
   }
 
-  private discordRouteAllowed(discordChannelId: string, routeDiscordChannelId: string): boolean {
-    return (
-      this.config.allowedDiscordChannelIds.size === 0 ||
-      this.config.allowedDiscordChannelIds.has(discordChannelId) ||
-      this.config.allowedDiscordChannelIds.has(routeDiscordChannelId)
-    );
+  private getAllowedQqToDiscordPair(qqGroupId: string): BridgePair | undefined {
+    const pair = this.config.qqGroupToBridgePair.get(qqGroupId);
+    if (
+      !pair ||
+      pair.direction === "discord-to-qq" ||
+      !this.bridgeRouteAllowed([pair.discordChannelId], qqGroupId)
+    ) {
+      return undefined;
+    }
+
+    return pair;
+  }
+
+  private bridgeRouteAllowed(
+    discordChannelIds: Array<string | null | undefined>,
+    qqGroupId: string
+  ): boolean {
+    return isBridgeRouteAllowed({
+      discordChannelIds,
+      qqGroupId,
+      allowedDiscordChannelIds: this.config.allowedDiscordChannelIds,
+      allowedQqGroupIds: this.config.allowedQqGroupIds
+    });
   }
 
   private routeAllowsQqToDiscord(qqGroupId: string): boolean {
-    const pair = this.config.qqGroupToBridgePair.get(qqGroupId);
-    return pair !== undefined && pair.direction !== "discord-to-qq" && this.qqGroupAllowed(qqGroupId);
+    return this.getAllowedQqToDiscordPair(qqGroupId) !== undefined;
   }
 
   private discordGuildAllowed(guildId: string | null | undefined): boolean {
@@ -1789,6 +1801,25 @@ export function resolveDiscordBridgeRoute(input: {
     routeChannelId: input.threadParentId,
     threadName: input.threadName
   };
+}
+
+export function isBridgeRouteAllowed(input: {
+  discordChannelIds: Array<string | null | undefined>;
+  qqGroupId: string;
+  allowedDiscordChannelIds: Set<string>;
+  allowedQqGroupIds: Set<string>;
+}): boolean {
+  const discordAllowed =
+    input.allowedDiscordChannelIds.size === 0 ||
+    input.discordChannelIds.some(
+      (channelId) =>
+        channelId !== null &&
+        channelId !== undefined &&
+        input.allowedDiscordChannelIds.has(channelId)
+    );
+  const qqAllowed =
+    input.allowedQqGroupIds.size === 0 || input.allowedQqGroupIds.has(input.qqGroupId);
+  return discordAllowed && qqAllowed;
 }
 
 function getQqSenderName(event: OneBotMessageEvent): string {

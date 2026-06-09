@@ -6,6 +6,7 @@ import {
   formatOneBotGroupMemberNotice,
   formatOneBotGroupNotice,
   formatOneBotGroupRequest,
+  isBridgeRouteAllowed,
   isOneBotNoticeBlocked,
   isOneBotRequestBlocked,
   isStatusCommandAuthorized,
@@ -157,6 +158,59 @@ describe("Discord bridge route resolution", () => {
         ])
       })
     ).toEqual({ pair: threadPair, routeChannelId: "300" });
+  });
+});
+
+describe("Bridge route allow-list filtering", () => {
+  it("allows routes when allow-lists are empty", () => {
+    expect(
+      isBridgeRouteAllowed({
+        discordChannelIds: ["100"],
+        qqGroupId: "200",
+        allowedDiscordChannelIds: new Set(),
+        allowedQqGroupIds: new Set()
+      })
+    ).toBe(true);
+  });
+
+  it("allows thread routes when either actual or configured Discord channel is listed", () => {
+    expect(
+      isBridgeRouteAllowed({
+        discordChannelIds: ["thread-300", "100"],
+        qqGroupId: "200",
+        allowedDiscordChannelIds: new Set(["100"]),
+        allowedQqGroupIds: new Set(["200"])
+      })
+    ).toBe(true);
+
+    expect(
+      isBridgeRouteAllowed({
+        discordChannelIds: ["thread-300", "100"],
+        qqGroupId: "200",
+        allowedDiscordChannelIds: new Set(["thread-300"]),
+        allowedQqGroupIds: new Set(["200"])
+      })
+    ).toBe(true);
+  });
+
+  it("blocks routes unless both Discord channel and QQ group pass allow-lists", () => {
+    expect(
+      isBridgeRouteAllowed({
+        discordChannelIds: ["100"],
+        qqGroupId: "200",
+        allowedDiscordChannelIds: new Set(["999"]),
+        allowedQqGroupIds: new Set(["200"])
+      })
+    ).toBe(false);
+
+    expect(
+      isBridgeRouteAllowed({
+        discordChannelIds: ["100"],
+        qqGroupId: "200",
+        allowedDiscordChannelIds: new Set(["100"]),
+        allowedQqGroupIds: new Set(["999"])
+      })
+    ).toBe(false);
   });
 });
 
