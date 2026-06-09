@@ -11,6 +11,7 @@ import {
   isOneBotNoticeBlocked,
   isOneBotRequestBlocked,
   isStatusCommandAuthorized,
+  messageLinkMatchesBridgePairs,
   normalizeMessageLink,
   oneBotGroupUploadFileRequest,
   resolveDiscordBridgeRoute,
@@ -221,6 +222,53 @@ describe("bridge message link normalization", () => {
       discordMessageIds: ["d1"],
       qqMessageIds: ["q1"]
     });
+  });
+});
+
+describe("bridge message link route matching", () => {
+  const link = {
+    discordMessageId: "d1",
+    discordChannelId: "100",
+    qqGroupId: "200",
+    qqMessageId: "q1",
+    createdAt: 123
+  };
+
+  it("keeps persisted links that still match the configured route pair", () => {
+    expect(
+      messageLinkMatchesBridgePairs(
+        link,
+        new Map([
+          [
+            "200",
+            {
+              discordChannelId: "100",
+              qqGroupId: "200",
+              direction: "both"
+            }
+          ]
+        ])
+      )
+    ).toBe(true);
+  });
+
+  it("drops persisted links for removed or remapped route pairs", () => {
+    expect(messageLinkMatchesBridgePairs(link, new Map())).toBe(false);
+    expect(
+      messageLinkMatchesBridgePairs(
+        link,
+        new Map([
+          [
+            "200",
+            {
+              discordChannelId: "999",
+              qqGroupId: "200",
+              direction: "both"
+            }
+          ]
+        ])
+      )
+    ).toBe(false);
   });
 });
 

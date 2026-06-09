@@ -1693,7 +1693,7 @@ export class QDiscordBridge {
 
     try {
       for (const link of this.linkStore.load()) {
-        if (this.config.qqGroupToBridgePair.has(link.qqGroupId)) {
+        if (messageLinkMatchesBridgePairs(link, this.config.qqGroupToBridgePair)) {
           this.indexMessageLink(link);
         }
       }
@@ -1810,6 +1810,18 @@ export function normalizeMessageLink(link: MessageLink): MessageLink {
     qqMessageId: qqMessageIds[0] ?? link.qqMessageId,
     qqMessageIds
   };
+}
+
+export function messageLinkMatchesBridgePairs(
+  link: MessageLink,
+  qqGroupToBridgePair: Map<string, BridgePair>
+): boolean {
+  const pair = qqGroupToBridgePair.get(link.qqGroupId);
+  if (!pair) {
+    return false;
+  }
+
+  return pair.discordChannelId === link.discordChannelId;
 }
 
 function messageLinkDiscordIds(link: MessageLink): string[] {
