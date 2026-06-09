@@ -1785,11 +1785,11 @@ async function upsertStatusCommand(
   await commandManager.create(commandData);
 }
 
-function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
+export function formatStatusForDiscord(status: BridgeRuntimeStatus): string {
   const queueLines = Object.entries(status.queues)
     .map(
       ([name, stats]) =>
-        `${name}: pending ${stats.pending}, running ${stats.running}, failed ${stats.failed}, dropped ${stats.dropped}`
+        `${name}: pending ${stats.pending}, running ${stats.running}, completed ${stats.completed}, failed ${stats.failed}, dropped ${stats.dropped}`
     )
     .join("\n");
 

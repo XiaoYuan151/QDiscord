@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatStatusForDiscord,
   formatOneBotGroupNotice,
   formatOneBotGroupRequest,
   isOneBotNoticeBlocked,
@@ -9,7 +10,12 @@ import {
   normalizeMessageLink,
   resolveDiscordBridgeRoute
 } from "../src/bridge.js";
-import type { BridgePair, OneBotNoticeEvent, OneBotRequestEvent } from "../src/types.js";
+import type {
+  BridgePair,
+  BridgeRuntimeStatus,
+  OneBotNoticeEvent,
+  OneBotRequestEvent
+} from "../src/types.js";
 
 describe("bridge command authorization", () => {
   it("allows status command users by allow-list or Manage Server permission", () => {
@@ -36,6 +42,27 @@ describe("bridge command authorization", () => {
         hasManageGuild: false
       })
     ).toBe(false);
+  });
+});
+
+describe("bridge status formatting", () => {
+  it("includes completed queue counts", () => {
+    const status: BridgeRuntimeStatus = {
+      startedAt: "2026-06-09T00:00:00.000Z",
+      uptimeSeconds: 30,
+      discord: { ready: true, userTag: "bot#0000", guildCount: 1, pingMs: 42 },
+      oneBot: { connected: true, connecting: false, selfQQId: "123", reconnectAttempts: 0 },
+      queues: {
+        "discord-to-qq": { pending: 1, running: 0, completed: 5, failed: 0, dropped: 0 }
+      },
+      bridgePairs: 1,
+      messageLinks: { tracked: 2, maxEntries: 100, ttlMs: 1000 },
+      routes: [{ discordChannelId: "111", qqGroupId: "222", direction: "both" }]
+    };
+
+    expect(formatStatusForDiscord(status)).toContain(
+      "discord-to-qq: pending 1, running 0, completed 5, failed 0, dropped 0"
+    );
   });
 });
 
