@@ -524,7 +524,9 @@ export class QDiscordBridge {
   private canUseStatusCommand(interaction: ChatInputCommandInteraction): boolean {
     return isStatusCommandAuthorized({
       userId: interaction.user.id,
+      guildId: interaction.guildId,
       allowedUserIds: this.config.statusCommandAllowedUserIds,
+      allowedGuildIds: this.config.allowedDiscordGuildIds,
       hasManageGuild: interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false
     });
   }
@@ -1732,10 +1734,18 @@ function getDiscordSenderName(message: Message): string {
 
 export function isStatusCommandAuthorized(input: {
   userId: string;
+  guildId?: string | null;
   allowedUserIds: Set<string>;
+  allowedGuildIds?: Set<string>;
   hasManageGuild: boolean;
 }): boolean {
-  return input.allowedUserIds.has(input.userId) || input.hasManageGuild;
+  const guildAllowed =
+    !input.allowedGuildIds ||
+    input.allowedGuildIds.size === 0 ||
+    (input.guildId !== null &&
+      input.guildId !== undefined &&
+      input.allowedGuildIds.has(input.guildId));
+  return guildAllowed && (input.allowedUserIds.has(input.userId) || input.hasManageGuild);
 }
 
 export function isOneBotNoticeBlocked(

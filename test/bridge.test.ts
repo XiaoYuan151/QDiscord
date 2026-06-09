@@ -26,7 +26,9 @@ describe("bridge command authorization", () => {
     expect(
       isStatusCommandAuthorized({
         userId: "111",
+        guildId: "guild-1",
         allowedUserIds: new Set(["111"]),
+        allowedGuildIds: new Set(["guild-1"]),
         hasManageGuild: false
       })
     ).toBe(true);
@@ -34,7 +36,9 @@ describe("bridge command authorization", () => {
     expect(
       isStatusCommandAuthorized({
         userId: "222",
+        guildId: "guild-1",
         allowedUserIds: new Set(),
+        allowedGuildIds: new Set(),
         hasManageGuild: true
       })
     ).toBe(true);
@@ -42,8 +46,32 @@ describe("bridge command authorization", () => {
     expect(
       isStatusCommandAuthorized({
         userId: "333",
+        guildId: "guild-1",
         allowedUserIds: new Set(["111"]),
+        allowedGuildIds: new Set(["guild-1"]),
         hasManageGuild: false
+      })
+    ).toBe(false);
+  });
+
+  it("blocks status command use outside configured Discord guilds", () => {
+    expect(
+      isStatusCommandAuthorized({
+        userId: "111",
+        guildId: "guild-2",
+        allowedUserIds: new Set(["111"]),
+        allowedGuildIds: new Set(["guild-1"]),
+        hasManageGuild: true
+      })
+    ).toBe(false);
+
+    expect(
+      isStatusCommandAuthorized({
+        userId: "111",
+        guildId: null,
+        allowedUserIds: new Set(["111"]),
+        allowedGuildIds: new Set(["guild-1"]),
+        hasManageGuild: true
       })
     ).toBe(false);
   });
