@@ -50,6 +50,7 @@ import type {
   BridgeRuntimeStatus,
   BridgePair,
   CqSegment,
+  DiscordPermissionName,
   OneBotMetaEvent,
   OneBotMessageEvent,
   OneBotNoticeEvent,
@@ -69,6 +70,16 @@ type CommandManagerLike = {
   fetch(): Promise<Collection<Snowflake, ApplicationCommand>>;
   create(data: StatusCommandData): Promise<unknown>;
   edit(commandId: Snowflake, data: StatusCommandData): Promise<unknown>;
+};
+
+const discordPermissionFlags: Record<DiscordPermissionName, bigint> = {
+  ViewChannel: PermissionFlagsBits.ViewChannel,
+  SendMessages: PermissionFlagsBits.SendMessages,
+  AttachFiles: PermissionFlagsBits.AttachFiles,
+  ReadMessageHistory: PermissionFlagsBits.ReadMessageHistory,
+  EmbedLinks: PermissionFlagsBits.EmbedLinks,
+  UseExternalEmojis: PermissionFlagsBits.UseExternalEmojis,
+  ManageMessages: PermissionFlagsBits.ManageMessages
 };
 
 export interface MessageLink {
@@ -451,12 +462,10 @@ export class QDiscordBridge {
       return;
     }
 
-    const requiredPermissions = [
-      { name: "ViewChannel", flag: PermissionFlagsBits.ViewChannel },
-      { name: "SendMessages", flag: PermissionFlagsBits.SendMessages },
-      { name: "AttachFiles", flag: PermissionFlagsBits.AttachFiles },
-      { name: "ReadMessageHistory", flag: PermissionFlagsBits.ReadMessageHistory }
-    ];
+    const requiredPermissions = [...this.config.discordPermissions].map((name) => ({
+      name,
+      flag: discordPermissionFlags[name]
+    }));
 
     for (const pair of this.config.bridgePairs) {
       const channel = await this.discord.channels.fetch(pair.discordChannelId as Snowflake);

@@ -6,8 +6,18 @@ export interface BridgePair {
 
 export type BridgeDirection = "both" | "discord-to-qq" | "qq-to-discord";
 
+export type DiscordPermissionName =
+  | "ViewChannel"
+  | "SendMessages"
+  | "AttachFiles"
+  | "ReadMessageHistory"
+  | "EmbedLinks"
+  | "UseExternalEmojis"
+  | "ManageMessages";
+
 export interface AppConfig {
   discordToken: string;
+  discordPermissions: Set<DiscordPermissionName>;
   napcatWsUrl: string;
   napcatAccessToken?: string;
   bridgePairs: BridgePair[];

@@ -2,11 +2,32 @@ import "dotenv/config";
 
 import { z } from "zod";
 
-import type { AppConfig, BridgeDirection, BridgePair, LogLevel } from "./types.js";
+import type {
+  AppConfig,
+  BridgeDirection,
+  BridgePair,
+  DiscordPermissionName,
+  LogLevel
+} from "./types.js";
+
+const defaultDiscordPermissions: DiscordPermissionName[] = [
+  "ViewChannel",
+  "SendMessages",
+  "AttachFiles",
+  "ReadMessageHistory"
+];
+
+const allowedDiscordPermissions: DiscordPermissionName[] = [
+  ...defaultDiscordPermissions,
+  "EmbedLinks",
+  "UseExternalEmojis",
+  "ManageMessages"
+];
 
 const envSchema = z
   .object({
     DISCORD_TOKEN: z.string().min(1),
+    DISCORD_PERMISSIONS: z.string().optional(),
     NAPCAT_WS_URL: z.string().min(1),
     NAPCAT_ACCESS_TOKEN: z.string().optional(),
     BRIDGE_PAIRS: z.string().min(1),
@@ -87,6 +108,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   return {
     discordToken: parseSecret(parsed.data.DISCORD_TOKEN, "DISCORD_TOKEN"),
+    discordPermissions: parseDiscordPermissions(parsed.data.DISCORD_PERMISSIONS),
     napcatWsUrl: parseWebSocketUrl(parsed.data.NAPCAT_WS_URL, "NAPCAT_WS_URL"),
     napcatAccessToken: parseOptionalSecret(parsed.data.NAPCAT_ACCESS_TOKEN, "NAPCAT_ACCESS_TOKEN"),
     bridgePairs,
@@ -183,6 +205,28 @@ function parseBridgePairs(input: string): BridgePair[] {
   assertUnique(pairs.map((pair) => pair.qqGroupId), "QQ group in BRIDGE_PAIRS");
 
   return pairs;
+}
+
+function parseDiscordPermissions(input: string | undefined): Set<DiscordPermissionName> {
+  const values = splitList(input ?? "");
+  if (values.length === 0) {
+    return new Set(defaultDiscordPermissions);
+  }
+
+  const permissions = new Set<DiscordPermissionName>();
+  for (const value of values) {
+    const permission = allowedDiscordPermissions.find(
+      (candidate) => candidate.toLowerCase() === value.toLowerCase()
+    );
+    if (!permission) {
+      throw new Error(
+        `Invalid DISCORD_PERMISSIONS entry: ${value}. Allowed values: ${allowedDiscordPermissions.join(", ")}`
+      );
+    }
+    permissions.add(permission);
+  }
+
+  return permissions;
 }
 
 function splitBridgePair(entry: string): [string, string, BridgeDirection] {

@@ -45,9 +45,12 @@ Edit `.env`:
 
 ```bash
 DISCORD_TOKEN=your-token
+DISCORD_PERMISSIONS=ViewChannel,SendMessages,AttachFiles,ReadMessageHistory
 NAPCAT_WS_URL=ws://127.0.0.1:3001
 BRIDGE_PAIRS=discordChannelId:qqGroupId
 ```
+
+`DISCORD_PERMISSIONS` is the permission contract QDiscord validates on configured bridge channels. Supported values are `ViewChannel`, `SendMessages`, `AttachFiles`, `ReadMessageHistory`, `EmbedLinks`, `UseExternalEmojis`, and `ManageMessages`.
 
 Multiple bridge pairs can be separated by commas, semicolons, or newlines:
 

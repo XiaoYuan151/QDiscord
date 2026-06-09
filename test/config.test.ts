@@ -12,6 +12,12 @@ describe("config", () => {
   it("loads production defaults safely", () => {
     const config = loadConfig(baseEnv);
 
+    expect([...config.discordPermissions]).toEqual([
+      "ViewChannel",
+      "SendMessages",
+      "AttachFiles",
+      "ReadMessageHistory"
+    ]);
     expect(config.allowEveryoneMentions).toBe(false);
     expect(config.bridgeBotMessages).toBe(false);
     expect(config.bridgeMemberEvents).toBe(true);
@@ -40,6 +46,7 @@ describe("config", () => {
     const config = loadConfig({
       ...baseEnv,
       BRIDGE_PAIRS: "111:222:discord-to-qq",
+      DISCORD_PERMISSIONS: "ViewChannel,SendMessages,EmbedLinks",
       QQ_TO_DISCORD_USER_MAP: "1:2",
       DISCORD_TO_QQ_USER_MAP: "2:1",
       CQ_FACE_EMOJI_MAP: "14:🙂",
@@ -68,6 +75,11 @@ describe("config", () => {
     });
 
     expect(config.qqToDiscordUserMap.get("1")).toBe("2");
+    expect([...config.discordPermissions]).toEqual([
+      "ViewChannel",
+      "SendMessages",
+      "EmbedLinks"
+    ]);
     expect(config.discordToQqUserMap.get("2")).toBe("1");
     expect(config.cqFaceEmojiMap.get("14")).toBe("🙂");
     expect(config.discordEmojiToCqFaceMap.get("🙂")).toBe("14");
@@ -103,6 +115,15 @@ describe("config", () => {
         STATUS_COMMAND_NAME: "Bridge Status"
       })
     ).toThrow("Invalid Discord command name");
+  });
+
+  it("rejects invalid Discord permission names", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        DISCORD_PERMISSIONS: "ViewChannel,Administrator"
+      })
+    ).toThrow("Invalid DISCORD_PERMISSIONS entry");
   });
 
   it("rejects duplicate bridge routes", () => {
