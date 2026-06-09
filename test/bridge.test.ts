@@ -7,6 +7,7 @@ import {
   formatOneBotGroupNotice,
   formatOneBotGroupRequest,
   isBridgeRouteAllowed,
+  isDiscordActorBridgeable,
   isOneBotNoticeBlocked,
   isOneBotRequestBlocked,
   isStatusCommandAuthorized,
@@ -74,6 +75,62 @@ describe("bridge command authorization", () => {
         hasManageGuild: true
       })
     ).toBe(false);
+  });
+});
+
+describe("Discord actor filtering", () => {
+  it("blocks the bridge bot, configured users, and bots by default", () => {
+    expect(
+      isDiscordActorBridgeable({
+        userId: "bot-user",
+        isBot: true,
+        selfUserId: "bot-user",
+        blockedDiscordUserIds: new Set(),
+        bridgeBotMessages: true
+      })
+    ).toBe(false);
+
+    expect(
+      isDiscordActorBridgeable({
+        userId: "blocked-user",
+        isBot: false,
+        selfUserId: "bot-user",
+        blockedDiscordUserIds: new Set(["blocked-user"]),
+        bridgeBotMessages: true
+      })
+    ).toBe(false);
+
+    expect(
+      isDiscordActorBridgeable({
+        userId: "other-bot",
+        isBot: true,
+        selfUserId: "bot-user",
+        blockedDiscordUserIds: new Set(),
+        bridgeBotMessages: false
+      })
+    ).toBe(false);
+  });
+
+  it("allows humans and configured bot messages", () => {
+    expect(
+      isDiscordActorBridgeable({
+        userId: "human",
+        isBot: false,
+        selfUserId: "bot-user",
+        blockedDiscordUserIds: new Set(),
+        bridgeBotMessages: false
+      })
+    ).toBe(true);
+
+    expect(
+      isDiscordActorBridgeable({
+        userId: "other-bot",
+        isBot: true,
+        selfUserId: "bot-user",
+        blockedDiscordUserIds: new Set(),
+        bridgeBotMessages: true
+      })
+    ).toBe(true);
   });
 });
 

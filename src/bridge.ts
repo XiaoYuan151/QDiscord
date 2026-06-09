@@ -693,8 +693,7 @@ export class QDiscordBridge {
     if (
       !this.config.bridgeMemberEvents ||
       !this.discordGuildAllowed(member.guild.id) ||
-      member.user.bot ||
-      this.config.blockedDiscordUserIds.has(member.user.id)
+      !this.isDiscordActorBridgeable(member.user.id, member.user.bot)
     ) {
       return;
     }
@@ -725,7 +724,7 @@ export class QDiscordBridge {
     action: "added" | "removed"
   ): Promise<void> {
     const fullUser = user.partial ? await user.fetch() : user;
-    if (fullUser.id === this.discord.user?.id || (!this.config.bridgeBotMessages && fullUser.bot)) {
+    if (!this.isDiscordActorBridgeable(fullUser.id, fullUser.bot)) {
       return;
     }
 
@@ -806,7 +805,8 @@ export class QDiscordBridge {
     userId: string,
     action: "added" | "removed"
   ): Promise<void> {
-    if (userId === this.discord.user?.id || this.config.blockedDiscordUserIds.has(userId)) {
+    const user = this.discord.users.cache.get(userId as Snowflake);
+    if (!this.isDiscordActorBridgeable(userId, user?.bot ?? false)) {
       return;
     }
 
@@ -815,7 +815,6 @@ export class QDiscordBridge {
       return;
     }
 
-    const user = this.discord.users.cache.get(userId as Snowflake);
     await this.sendQqSegments(
       destination.qqGroupId,
       discordPollVoteToQqSegments(
@@ -1270,15 +1269,7 @@ export class QDiscordBridge {
       return false;
     }
 
-    if (this.config.blockedDiscordUserIds.has(message.author.id)) {
-      return false;
-    }
-
-    if (message.author.id === this.discord.user?.id) {
-      return false;
-    }
-
-    return this.config.bridgeBotMessages || !message.author.bot;
+    return this.isDiscordActorBridgeable(message.author.id, message.author.bot);
   }
 
   private resolveDiscordMessageRoute(message: Message | PartialMessage): DiscordBridgeRoute | undefined {
@@ -1362,6 +1353,16 @@ export class QDiscordBridge {
         guildId !== undefined &&
         this.config.allowedDiscordGuildIds.has(guildId))
     );
+  }
+
+  private isDiscordActorBridgeable(userId: string, isBot: boolean): boolean {
+    return isDiscordActorBridgeable({
+      userId,
+      isBot,
+      selfUserId: this.discord.user?.id,
+      blockedDiscordUserIds: this.config.blockedDiscordUserIds,
+      bridgeBotMessages: this.config.bridgeBotMessages
+    });
   }
 
   private qqGroupAllowed(qqGroupId: string): boolean {
@@ -1830,6 +1831,24 @@ export function isBridgeRouteAllowed(input: {
   const qqAllowed =
     input.allowedQqGroupIds.size === 0 || input.allowedQqGroupIds.has(input.qqGroupId);
   return discordAllowed && qqAllowed;
+}
+
+export function isDiscordActorBridgeable(input: {
+  userId: string;
+  isBot: boolean;
+  selfUserId?: string;
+  blockedDiscordUserIds: Set<string>;
+  bridgeBotMessages: boolean;
+}): boolean {
+  if (input.userId === input.selfUserId) {
+    return false;
+  }
+
+  if (input.blockedDiscordUserIds.has(input.userId)) {
+    return false;
+  }
+
+  return input.bridgeBotMessages || !input.isBot;
 }
 
 function getQqSenderName(event: OneBotMessageEvent): string {
